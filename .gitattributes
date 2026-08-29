@@ -1,0 +1,35 @@
+# ==============================================================================
+# Git Attributes - Line endings & GitHub Linguist overrides
+# ==============================================================================
+
+# Auto-normalize line endings
+* text=auto eol=lf
+
+# Explicit text files with LF
+*.go text eol=lf
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.env* text eol=lf
+Dockerfile* text eol=lf
+Makefile text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.tar binary
+*.gz binary
+*.zip binary
+
+# GitHub Linguist statistics overrides
+docs/* linguist-documentation
+*.md linguist-documentation
+tests/* linguist-test
+*.test.go linguist-test
+*test.go linguist-test
+config/* linguist-detectable=true

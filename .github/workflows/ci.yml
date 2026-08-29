@@ -1,0 +1,128 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+jobs:
+  lint:
+    name: Linters & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: docker/go.sum
+
+      - name: Run Go vet and fmt check
+        run: |
+          cd docker
+          test -z "$(gofmt -l .)" || (echo "Unformatted files found:" && gofmt -l . && exit 1)
+          go vet ./...
+
+      - name: Lint YAML files
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .
+          config_data: "{extends: relaxed, rules: {line-length: {max: 180}}}"
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './tests'
+
+      - name: Hadolint (Dockerfiles)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: 'docker/Dockerfile.guardrail'
+          failure-threshold: error
+
+  test-unit:
+    name: Go Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: docker/go.sum
+
+      - name: Run Unit Tests with Race Detector
+        run: |
+          cd docker
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload Test Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage-report
+          path: docker/coverage.out
+          retention-days: 7
+
+  docker-lint-build:
+    name: Container Build & Compose Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: |
+          cp .env.example .env
+          docker compose config -q
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build Guardrail Proxy Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker
+          file: ./docker/Dockerfile.guardrail
+          push: false
+          tags: loom/guardrail-proxy:ci-test
+
+  test-integration:
+    name: End-to-End Integration Smoke Tests
+    needs: [test-unit, docker-lint-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment file
+        run: cp .env.example .env
+
+      - name: Launch Docker Compose stack
+        run: docker compose up -d --build
+
+      - name: Run Smoke Test Suite
+        run: |
+          chmod +x tests/smoke_test.sh
+          ./tests/smoke_test.sh --timeout 60
+
+      - name: Capture container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Teardown Docker Compose stack
+        if: always()
+        run: docker compose down -v

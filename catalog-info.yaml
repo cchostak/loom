@@ -1,0 +1,48 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: loom
+  title: Loom Cloud Development & AI Gateway
+  description: >-
+    Enterprise containerized cloud IDE and AI proxy platform featuring Agentgateway
+    LLM routing, Common Expression Language (CEL) MCP authorization, synchronous
+    Go security guardrail validation, and OpenTelemetry/Jaeger distributed tracing.
+  tags:
+    - ide
+    - ai-gateway
+    - llm-proxy
+    - guardrails
+    - mcp
+    - opentelemetry
+    - jaeger
+    - go
+    - docker-compose
+  annotations:
+    backstage.io/managed-by-location: url:https://github.com/cchostak/loom/blob/main/catalog-info.yaml
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: platform/loom
+  links:
+    - url: http://localhost:8443
+      title: Code-Server Web IDE
+      icon: dashboard
+    - url: http://localhost:16686
+      title: Jaeger Distributed Tracing
+      icon: search
+    - url: http://localhost:8080/v1
+      title: Agentgateway LLM Endpoint
+      icon: api
+    - url: http://localhost:9090/health
+      title: Guardrail Proxy Health
+      icon: check
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: developer-platform
+  providesApis:
+    - agentgateway-llm-api
+    - agentgateway-mcp-api
+    - guardrail-validation-api
+  dependsOn:
+    - resource:otel-collector
+    - resource:jaeger-tracing

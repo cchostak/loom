@@ -1,0 +1,49 @@
+# ==============================================================================
+# Dependabot Configuration - Automated Dependency & Security Updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+# ==============================================================================
+
+version: 2
+updates:
+  # Monitor GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Monitor Dockerfiles for base image updates
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:30"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+
+  # Monitor Go dependencies for Guardrail Proxy
+  - package-ecosystem: "gomod"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"

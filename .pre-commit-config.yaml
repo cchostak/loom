@@ -1,0 +1,80 @@
+# ==============================================================================
+# Pre-Commit Hooks Configuration
+# See https://pre-commit.com for more information
+# ==============================================================================
+
+default_language_version:
+  python: python3
+
+default_stages: [pre-commit, pre-push]
+
+repos:
+  # Standard Hygiene & Format Fixers
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        exclude: ^(\.env\.example|docs/)
+      - id: end-of-file-fixer
+        name: Fix End of Files
+      - id: check-yaml
+        name: Validate YAML Files
+        args: [--allow-multiple-documents]
+      - id: check-json
+        name: Validate JSON Files
+      - id: check-merge-conflict
+        name: Check for Merge Conflict Markers
+      - id: check-added-large-files
+        name: Check for Large Added Files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+        name: Detect Accidentally Committed Private Keys
+
+  # Secret Detection via Gitleaks
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: Gitleaks Secret Scanner
+
+  # YAML Linter
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: YAML Linter
+        args: [-d, '{extends: relaxed, rules: {line-length: {max: 180}}}']
+
+  # Markdown Linter
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint
+        name: Markdown Linter
+        args: [--disable, MD013, MD033, MD041, --]
+
+  # Shell Script Linter
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        name: ShellCheck
+        types: [shell]
+
+  # Dockerfile Linter
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        name: Hadolint (Dockerfiles)
+
+  # Go Linters and Formatters
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.59.1
+    hooks:
+      - id: golangci-lint
+        name: GolangCI Linter
+        entry: bash -c 'cd docker && golangci-lint run ./...'
+        types: [go]
+        pass_filenames: false

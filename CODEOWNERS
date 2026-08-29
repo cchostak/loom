@@ -1,0 +1,33 @@
+# ==============================================================================
+# Loom Code Ownership & Review Routing
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# ==============================================================================
+
+# Default global owners for the repository
+* @platform/core-team @platform/platform-engineering
+
+# CI/CD Workflows, Security Policies & Governance
+/.github/ @platform/secops @platform/platform-engineering
+/catalog-info.yaml @platform/enterprise-architecture @platform/platform-engineering
+/CODEOWNERS @platform/core-team
+/SECURITY.md @platform/secops
+
+# Gateway & Guardrail Proxy Components
+/docker/ @platform/runtime-team @platform/platform-engineering
+/docker/main.go @platform/secops @platform/runtime-team
+/docker/Dockerfile.gateway @platform/runtime-team
+/docker/Dockerfile.guardrail @platform/runtime-team
+
+# Architecture & Gateway Policies
+/config/ @platform/secops @platform/runtime-team
+/config/agentgateway-config.yaml @platform/secops
+
+# Observability Configurations
+/config/otel-collector-config.yaml @platform/observability-team
+
+# Test Automation & Verification Suites
+/tests/ @platform/qa-automation @platform/platform-engineering
+
+# Documentation & Architecture Decision Records
+/docs/ @platform/core-team @platform/enterprise-architecture
+/README.md @platform/core-team

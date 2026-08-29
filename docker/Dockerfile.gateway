@@ -1,0 +1,45 @@
+# ==============================================================================
+# Agentgateway Dockerfile with Node.js & NPM for STDIO MCP execution
+# ==============================================================================
+
+# Keep the binary and configuration schema on the same tested release. The
+# upstream image is distroless and stores the binary at /app/agentgateway.
+ARG AGENTGATEWAY_VERSION=v1.5.0
+FROM ghcr.io/agentgateway/agentgateway:${AGENTGATEWAY_VERSION} AS agentgateway-upstream
+
+# Agentgateway v1.5 requires glibc >= 2.39; Debian Trixie supplies a compatible
+# runtime while retaining Node.js, npm, and npx for local stdio MCP servers.
+FROM node:20-trixie-slim
+
+LABEL maintainer="Home IDE Powerhouse"
+LABEL description="Agentgateway runtime equipped with Node.js and npm for local STDIO MCP execution"
+
+# Install essential system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    bash \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install standard MCP server packages globally for fast offline invocation
+RUN npm install -g \
+    @modelcontextprotocol/server-filesystem@2026.7.10
+
+# Copy the single upstream binary into the richer MCP runtime image. Dockerfile
+# COPY does not support shell redirection or "|| true"; those tokens are parsed
+# as source paths and were the reason `make up` failed.
+COPY --from=agentgateway-upstream /app/agentgateway /usr/local/bin/agentgateway
+
+# Set up working directory for workspace mounts
+WORKDIR /workspace
+
+# Expose LLM (8080) and MCP (3000) endpoints
+EXPOSE 8080 3000
+
+# Default entrypoint and config flag
+ENTRYPOINT ["agentgateway"]
+CMD ["-f", "/etc/agentgateway/config.yaml"]

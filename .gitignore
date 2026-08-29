@@ -1,0 +1,48 @@
+# ==============================================================================
+# Git Ignore - Loom Cloud Development & AI Gateway Stack
+# ==============================================================================
+
+# Environment files with secrets
+.env
+!.env.example
+*.local.env
+
+# Go build & test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+cover.out
+coverage.out
+coverage.html
+/docker/guardrail
+
+# Go dependencies
+/docker/vendor/
+
+# Node.js artifacts (if local MCP packages installed)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker volumes and local data
+.docker-compose.override.yml
+
+# IDE & Editor specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Test outputs & temporary files
+tmp/
+dist/
+build/
+.cache/
