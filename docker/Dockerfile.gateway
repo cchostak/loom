@@ -9,7 +9,7 @@ FROM ghcr.io/agentgateway/agentgateway:${AGENTGATEWAY_VERSION} AS agentgateway-u
 
 # Agentgateway v1.5 requires glibc >= 2.39; Debian Trixie supplies a compatible
 # runtime while retaining Node.js, npm, and npx for local stdio MCP servers.
-FROM node:20-trixie-slim
+FROM node:26-trixie-slim
 
 LABEL maintainer="Home IDE Powerhouse"
 LABEL description="Agentgateway runtime equipped with Node.js and npm for local STDIO MCP execution"
