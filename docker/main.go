@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"guardrail-proxy/pii"
 )
 
 // WebhookPayload supports both direct {role, content, prompt} and messages array formats
@@ -65,6 +68,10 @@ type ValidationResponse struct {
 	Matched []string `json:"matched,omitempty"`
 }
 
+// piiScrubber is the package-level PII scrubber, initialised by main().
+// It is safe for concurrent use.
+var piiScrubber *pii.Scrubber
+
 // ForbiddenPatterns contains disallowed strings and destructive system commands
 var ForbiddenPatterns = []string{
 	"ignore previous instructions",
@@ -89,10 +96,27 @@ func SetupRouter() http.Handler {
 	mux.HandleFunc("/request", guardrailWebhookHandler)
 	mux.HandleFunc("/response", guardrailWebhookHandler)
 	mux.HandleFunc("/health", healthHandler)
+	if os.Getenv("DEBUG_MODE") == "true" {
+		mux.HandleFunc("/pii-check", piiCheckHandler)
+	}
 	return loggingMiddleware(mux)
 }
 
 func main() {
+	// Initialise PII scrubber from environment.
+	presidioURL := os.Getenv("PII_PRESIDIO_URL")
+	if presidioURL == "" {
+		presidioURL = "http://presidio-analyzer:5002"
+	}
+	threshold := 0.7
+	if v := os.Getenv("PII_THRESHOLD"); v != "" {
+		if parsed, err := strconv.ParseFloat(v, 64); err == nil {
+			threshold = parsed
+		}
+	}
+	piiScrubber = pii.NewScrubber(presidioURL, threshold)
+	log.Printf("🔍 PII scrubber configured: presidio=%s threshold=%.2f", presidioURL, threshold)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "9090"
@@ -182,7 +206,13 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matchedPatterns := findForbiddenPatterns(extractContent(bodyBytes))
+	rawContent := extractContent(bodyBytes)
+	scrubbed, piiEntities := scrubPII(r.Context(), rawContent)
+	if len(piiEntities) > 0 {
+		log.Printf("🔒 PII scrubbed: %d entit(ies) redacted before pattern check", len(piiEntities))
+	}
+
+	matchedPatterns := findForbiddenPatterns(scrubbed)
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -223,7 +253,13 @@ func guardrailWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matched := findForbiddenPatterns(extractContent(bodyBytes))
+	rawContent := extractContent(bodyBytes)
+	scrubbed, piiEntities := scrubPII(r.Context(), rawContent)
+	if len(piiEntities) > 0 {
+		log.Printf("🔒 PII scrubbed in webhook: %d entit(ies) redacted", len(piiEntities))
+	}
+
+	matched := findForbiddenPatterns(scrubbed)
 	response := GuardrailWebhookResponse{Action: GuardrailAction{
 		Reason: "Content passed Loom guardrail verification",
 	}}
@@ -288,3 +324,67 @@ func findForbiddenPatterns(content string) []string {
 	}
 	return matched
 }
+
+// scrubPII calls Presidio via piiScrubber and returns the redacted text plus
+// the list of detected entities. On error it fails open: returns the original
+// text unchanged and logs a warning so the proxy continues operating.
+func scrubPII(ctx context.Context, text string) (string, []pii.Entity) {
+	if piiScrubber == nil {
+		return text, nil
+	}
+	scrubbed, entities, err := piiScrubber.ScrubText(ctx, text)
+	if err != nil {
+		log.Printf("⚠️  PII scrubber error (fail-open): %v", err)
+		return text, nil
+	}
+	return scrubbed, entities
+}
+
+// piiCheckHandler is a debug endpoint (only registered when DEBUG_MODE=true)
+// that returns the raw Presidio analysis for a given text payload.
+// Request: POST /pii-check with {"text": "..."}
+// Response: the Presidio entity list JSON for tuning threshold values.
+func piiCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_ = json.NewEncoder(w).Encode(ValidationResponse{Status: "error", Error: "Use POST"})
+		return
+	}
+
+	bodyBytes, err := readRequestBody(w, r)
+	if err != nil || len(bodyBytes) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ValidationResponse{Status: "error", Error: "Invalid body"})
+		return
+	}
+
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(bodyBytes, &req); err != nil || req.Text == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ValidationResponse{Status: "error", Error: "JSON body with 'text' field required"})
+		return
+	}
+
+	if piiScrubber == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(ValidationResponse{Status: "error", Error: "PII scrubber not initialised"})
+		return
+	}
+
+	entities, err := piiScrubber.Analyze(r.Context(), req.Text)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(ValidationResponse{Status: "error", Error: "Presidio error: " + err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"entities": entities,
+		"redacted": pii.Redact(req.Text, entities),
+	})
+}
+

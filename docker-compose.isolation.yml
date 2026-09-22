@@ -1,0 +1,48 @@
+# ==============================================================================
+# Loom — Container Isolation Override
+# ==============================================================================
+# Applies gVisor (runsc) runtime to security-sensitive services.
+#
+# Prerequisites:
+#   sudo bash docker/setup-isolation.sh   # install gVisor once
+#
+# Usage (via Makefile):
+#   make up-isolated
+#
+# Manual usage:
+#   docker compose -f docker-compose.yml -f docker-compose.isolation.yml up -d --build --wait
+#
+# Services and their isolation rationale:
+#
+#   guardrail-proxy    → runsc: processes untrusted LLM prompts/responses.
+#                        A kernel exploit from adversarial prompt content is
+#                        contained within gVisor's user-space kernel.
+#
+#   presidio-analyzer  → runsc: processes PII-laden text from LLMs and users.
+#                        Python ML libraries (spaCy, transformers) have a broad
+#                        syscall surface — gVisor limits blast radius.
+#
+#   agentgateway       → runsc: routes all LLM traffic and holds the API key.
+#                        Isolating the key holder reduces exfiltration risk.
+#
+#   vscode             → runc (default): mounts a host volume and requires
+#                        filesystem access that conflicts with gVisor's sandboxed
+#                        VFS. See ADR 0003 for the trade-off analysis. Kata
+#                        Containers (--with-kata) is the right upgrade path if
+#                        stronger vscode isolation is needed.
+#
+#   otel-collector,
+#   jaeger             → runc (default): infrastructure services that handle
+#                        only internal telemetry data and have no external-facing
+#                        attack surface in this stack.
+# ==============================================================================
+
+services:
+  guardrail-proxy:
+    runtime: runsc
+
+  presidio-analyzer:
+    runtime: runsc
+
+  agentgateway:
+    runtime: runsc

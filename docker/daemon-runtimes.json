@@ -1,0 +1,16 @@
+{
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc",
+      "runtimeArgs": ["--network=sandbox", "--platform=systrap"]
+    },
+    "runsc-kvm": {
+      "path": "/usr/local/bin/runsc",
+      "runtimeArgs": ["--network=sandbox", "--platform=kvm"]
+    },
+    "io.containerd.kata.v2": {
+      "path": "/usr/bin/containerd-shim-kata-v2",
+      "runtimeType": "io.containerd.kata.v2"
+    }
+  }
+}

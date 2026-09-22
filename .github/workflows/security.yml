@@ -51,13 +51,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
       - name: Run govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          go-version-file: 'docker/go.mod'
-          package-path: './docker/...'
+          go-version-input: '1.22'
+          work-dir: 'docker'
+          go-package: './...'

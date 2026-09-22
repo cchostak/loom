@@ -84,12 +84,33 @@ services:
     restart: unless-stopped
     ports:
       - "${LOOM_GUARDRAIL_PORT:-9090}:9090"
+    environment:
+      - PII_PRESIDIO_URL=${PII_PRESIDIO_URL:-http://presidio-analyzer:5002}
+      - PII_THRESHOLD=${PII_THRESHOLD:-0.7}
+    depends_on:
+      presidio-analyzer:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9090/health"]
       interval: 3s
       timeout: 2s
       retries: 10
       start_period: 3s
+    networks:
+      - ide-net
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    container_name: presidio-analyzer
+    restart: unless-stopped
+    environment:
+      - ANALYZER_CONF_FILE=/usr/bin/conf/default_analyzer.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5002/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
     networks:
       - ide-net
 
@@ -106,7 +127,57 @@ services:
     networks:
       - ide-net
 
+  # ── Ingestion Pipeline (profile: pipeline) ────────────────────────────────
+  # Medallion architecture: Bronze → Silver (PII scrub) → Gold (embed + vec)
+  # RAG endpoint: retrieve from gold → augment → agentgateway → OpenRouter LLM
+  #
+  # Start with: make pipeline
+  # Or manually: docker compose --profile pipeline up -d pipeline
+  pipeline:
+    profiles: ["pipeline"]
+    build:
+      context: ./pipeline
+      dockerfile: Dockerfile
+    container_name: pipeline
+    restart: unless-stopped
+    ports:
+      - "${LOOM_PIPELINE_PORT:-8181}:8181"
+    environment:
+      - AGENTGATEWAY_URL=http://agentgateway:8080/v1
+      - GUARDRAIL_URL=http://guardrail-proxy:9090
+      - PRESIDIO_URL=http://presidio-analyzer:5002
+      - PII_THRESHOLD=${PII_THRESHOLD:-0.7}
+      - DEFAULT_RAG_MODEL=${DEFAULT_RAG_MODEL:-openai/gpt-4o-mini}
+      - DB_PATH=/data/loom.db
+      - MODEL_CACHE_DIR=/models
+    volumes:
+      - pipeline-data:/data
+      - pipeline-models:/models
+    depends_on:
+      guardrail-proxy:
+        condition: service_healthy
+      presidio-analyzer:
+        condition: service_healthy
+      agentgateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8181/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 30s
+    networks:
+      - ide-net
+
 networks:
   ide-net:
     driver: bridge
     name: ide-net
+
+volumes:
+  # SQLite database file for the three medallion layers
+  pipeline-data:
+    name: loom-pipeline-data
+  # sentence-transformers model cache (all-MiniLM-L6-v2, ~90 MB)
+  pipeline-models:
+    name: loom-pipeline-models

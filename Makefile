@@ -2,7 +2,7 @@
 # Loom — Enterprise Cloud Development Platform & AI Security Gateway
 # ==============================================================================
 
-.PHONY: help init up down restart logs status trace clean check fmt test test-smoke scan doctor lab lab-json
+.PHONY: help init up down restart logs status trace clean check fmt test test-smoke scan doctor lab lab-json setup-isolation up-isolated pipeline pipeline-rag
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -62,6 +62,11 @@ trace: ## Display service dashboard endpoints and Jaeger tracing guide
 	@echo " Guardrail Proxy Health: http://localhost:$$(docker compose port guardrail-proxy 9090 | awk -F: 'NR == 1 {print $$NF}')/health"
 	@echo " Adversarial Swarm Lab:   make lab"
 	@echo " OTel Collector (gRPC):  localhost:$$(docker compose port otel-collector 4317 | awk -F: 'NR == 1 {print $$NF}')"
+	@if docker compose ps pipeline 2>/dev/null | grep -q 'running\|Up'; then \
+		echo " Pipeline API:           http://localhost:$$(docker compose --profile pipeline port pipeline 8181 | awk -F: 'NR == 1 {print $$NF}')"; \
+		echo " Pipeline Docs (OpenAPI):http://localhost:$$(docker compose --profile pipeline port pipeline 8181 | awk -F: 'NR == 1 {print $$NF}')/docs"; \
+		echo " Medallion Stats:        http://localhost:$$(docker compose --profile pipeline port pipeline 8181 | awk -F: 'NR == 1 {print $$NF}')/medallion/stats"; \
+	fi
 	@echo "----------------------------------------------------------------"
 	@echo " 🚀 How to inspect OpenTelemetry traces in Jaeger:"
 	@echo "   1. Open http://localhost:$$(docker compose port jaeger 16686 | awk -F: 'NR == 1 {print $$NF}') in your browser."
@@ -117,8 +122,44 @@ lab: init ## Run the keyless adversarial agent-swarm security lab
 
 lab-json: init ## Run the swarm lab and emit a machine-readable JSON report
 	@docker compose up -d --build --wait --wait-timeout 60 guardrail-proxy
-	@docker compose --profile lab build swarm-lab >/dev/null
+	@docker compose --profile lab build swarm-lab > /dev/null
 	@docker compose --profile lab run --rm swarm-lab --json
+
+setup-isolation: ## Install gVisor (runsc) and register it with the Docker daemon
+	@echo "==> Setting up container isolation runtimes..."
+	@echo "$(YELLOW)⚠  This step requires sudo and will modify /etc/docker/daemon.json.$(NC)"
+	@echo "$(YELLOW)   Append --with-kata to also install Kata Containers (requires KVM).$(NC)"
+	sudo bash docker/setup-isolation.sh $(ISOLATION_FLAGS)
+	@echo -e "$(GREEN)✓ Isolation setup complete. Run 'make up-isolated' to start the sandboxed stack.$(NC)"
+
+up-isolated: init ## Start the stack with gVisor container isolation (run make setup-isolation first)
+	@echo "==> Launching Loom stack with gVisor (runsc) isolation..."
+	@if ! docker info --format '{{range $$k, $$v := .Runtimes}}{{$$k}} {{end}}' 2>/dev/null | grep -q runsc; then \
+		echo -e "$(RED)✗ runsc runtime is not registered with Docker.$(NC)"; \
+		echo "  Run: make setup-isolation"; \
+		exit 1; \
+	fi
+	docker compose -f docker-compose.yml -f docker-compose.isolation.yml up -d --build --wait --wait-timeout 120
+	@echo ""
+	@$(MAKE) trace
+	@echo -e "$(CYAN)  Isolation mode:$(NC) guardrail-proxy, presidio-analyzer, agentgateway → runsc (gVisor)"
+	@echo -e "$(CYAN)  Verify:$(NC) docker inspect guardrail-proxy --format '{{.HostConfig.Runtime}}'"
+
+pipeline: init ## Build and start the ingestion pipeline (medallion + RAG) and ingest sample data
+	@echo "==> Launching ingestion pipeline stack (Bronze → Silver → Gold → RAG)..."
+	docker compose --profile pipeline up -d --build --wait --wait-timeout 180
+	@echo ""
+	@echo "==> Ingesting sample documents into the medallion pipeline..."
+	python3 pipeline/ingest_sample.py --wait
+	@echo ""
+	@$(MAKE) trace
+
+pipeline-rag: ## Run a demo RAG query against the ingested sample data
+	@echo "==> Running demo RAG query..."
+	@curl -sf -X POST http://localhost:$$(docker compose port pipeline 8181 2>/dev/null | awk -F: 'NR==1{print $$NF}' || echo 8181)/rag \
+		-H 'Content-Type: application/json' \
+		-d '{"query": "How does the guardrail proxy protect LLM responses?", "k": 4}' \
+		| python3 -m json.tool || echo "Pipeline service not running — run: make pipeline"
 
 scan: ## Run local secret and vulnerability audits
 	@echo "==> Checking for accidental secret leaks..."
@@ -170,14 +211,29 @@ doctor: ## Validate prerequisite CLI tools, Docker daemon, network ports, and .e
 	@echo ""
 	@echo "4. Checking Port Availability (8080, 8443, 9090, 16686, 4317, 3000):"
 	@for port in 8080 8443 9090 16686 4317 3000; do \
-		if command -v nc >/dev/null 2>&1; then \
-			if nc -z 127.0.0.1 $$port >/dev/null 2>&1; then \
+		if command -v nc > /dev/null 2>&1; then \
+			if nc -z 127.0.0.1 $$port > /dev/null 2>&1; then \
 				echo -e "   $(YELLOW)⚠ Port $$port is currently in use (possibly by running Loom stack).$(NC)"; \
 			else \
 				echo -e "   $(GREEN)✓ Port $$port is free.$(NC)"; \
 			fi \
 		fi \
 	done
+	@echo ""
+	@echo "5. Checking Container Isolation Runtimes:"
+	@RUNTIMES=$$(docker info --format '{{range $$k, $$v := .Runtimes}}{{$$k}} {{end}}' 2>/dev/null || echo ''); \
+	for rt in runsc runsc-kvm; do \
+		if echo "$$RUNTIMES" | grep -q "$$rt"; then \
+			echo -e "   $(GREEN)✓ $$rt$$(echo '                ' | cut -c 1-$$(expr 16 - $${#rt})) : registered (gVisor)$(NC)"; \
+		else \
+			echo -e "   $(YELLOW)⚠ $$rt$$(echo '                ' | cut -c 1-$$(expr 16 - $${#rt})) : not installed — run 'make setup-isolation'$(NC)"; \
+		fi; \
+	done; \
+	if echo "$$RUNTIMES" | grep -q 'kata'; then \
+		echo -e "   $(GREEN)✓ kata           : registered (Kata Containers)$(NC)"; \
+	else \
+		echo -e "   $(YELLOW)⚠ kata           : not installed (optional — run 'make setup-isolation --with-kata')$(NC)"; \
+	fi
 	@echo "================================================================"
 	@echo -e "$(BOLD)$(GREEN)✓ Doctor diagnostic check finished.$(NC)"
 
