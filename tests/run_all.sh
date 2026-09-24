@@ -13,7 +13,9 @@ echo -e "\n${BOLD}${CYAN}==> [1/3] Running Go Unit & Policy Tests...${NC}"
 cd docker
 go test -v -race -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out | tail -n 1
+go vet ./...
 cd ..
+python3 -m unittest discover -s tests -p "test_*.py"
 
 echo -e "\n${BOLD}${CYAN}==> [2/3] Validating Configuration & Manifests...${NC}"
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then

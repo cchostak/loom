@@ -1,183 +1,173 @@
+x-restricted: &restricted
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  read_only: true
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+  pids_limit: 128
+  mem_limit: 512m
+  cpus: 1.0
+  ulimits:
+    nofile: {soft: 1024, hard: 2048}
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
 services:
-  agentgateway:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile.gateway
-    container_name: agentgateway
+  control-plane:
+    <<: *restricted
+    build: {context: ./docker, dockerfile: Dockerfile.control}
     restart: unless-stopped
     ports:
-      - "${LOOM_LLM_PORT:-8080}:8080" # LLM Gateway
-      - "${LOOM_MCP_PORT:-3000}:3000" # MCP Gateway
+      - "127.0.0.1:${LOOM_LLM_PORT:-8080}:8080"
+      - "127.0.0.1:${LOOM_MCP_PORT:-3000}:8080"
+    volumes:
+      - ./config:/config:ro
+      - ./.loom/identity:/identity:ro
+      - security-audit:/audit
+    depends_on:
+      agentgateway: {condition: service_healthy}
+      guardrail-proxy: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [client-net, mediation]
+
+  agentgateway:
+    <<: *restricted
+    build: {context: ., dockerfile: ./docker/Dockerfile.gateway}
+    restart: unless-stopped
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - AGENTGATEWAY_CONFIG_FILE=/etc/agentgateway/config.yaml
     volumes:
       - ./config/agentgateway-config.yaml:/etc/agentgateway/config.yaml:ro
-      - ./workspace:/workspace
+      - ./workspace:/workspace:ro
     depends_on:
-      otel-collector:
-        condition: service_healthy
-      guardrail-proxy:
-        condition: service_healthy
+      guardrail-proxy: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/models"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 10s
-    networks:
-      - ide-net
+    networks: [mediation, provider-egress]
 
   vscode:
+    <<: *restricted
     image: codercom/code-server:4.135.0
-    container_name: vscode
+    user: "1000:1000"
     restart: unless-stopped
-    ports:
-      - "${LOOM_IDE_PORT:-8443}:8080" # IDE Web UI
+    read_only: false # IDE extensions/config need a writable home; no sudo grant.
+    mem_limit: 2g
+    ports: ["127.0.0.1:${LOOM_IDE_PORT:-8443}:8080"]
     environment:
-      - PASSWORD=${IDE_PASSWORD:-ide_super_secret_password_change_me}
-      - SUDO_PASSWORD=${IDE_PASSWORD:-ide_super_secret_password_change_me}
+      - PASSWORD=${IDE_PASSWORD:?Set IDE_PASSWORD in .env}
       - DEFAULT_WORKSPACE=/home/coder/project
-      - AGENTGATEWAY_LLM_URL=http://agentgateway:8080/v1
-      - AGENTGATEWAY_MCP_URL=http://agentgateway:3000
-    volumes:
-      - ./workspace:/home/coder/project
-    networks:
-      - ide-net
+      - AGENTGATEWAY_LLM_URL=http://control-plane:8080/v1
+      - AGENTGATEWAY_MCP_URL=http://control-plane:8080/mcp
+    volumes: ["./workspace:/home/coder/project"]
+    networks: [client-net]
 
   jaeger:
-    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
-    container_name: jaeger
+    <<: *restricted
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0@sha256:46a886260e04002d8f45e213fc39063fa11a50446048fdaa64786fc0840cb9f8
+    user: "65532:65532"
     restart: unless-stopped
-    ports:
-      - "${LOOM_JAEGER_PORT:-16686}:16686" # Jaeger Web UI
-      - "4317"       # Internal OTLP gRPC endpoint
-    networks:
-      - ide-net
+    ports: ["127.0.0.1:${LOOM_JAEGER_PORT:-16686}:16686"]
+    networks: [telemetry, observability-ui]
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.159.0
-    container_name: otel-collector
+    <<: *restricted
+    image: otel/opentelemetry-collector-contrib:0.159.0@sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc
+    user: "65532:65532"
     restart: unless-stopped
-    command: ["--config=/etc/otelcol/config.yaml"]
-    volumes:
-      - ./config/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-    ports:
-      - "${LOOM_OTEL_GRPC_PORT:-4317}:4317" # OTLP gRPC receiver
-      - "${LOOM_OTEL_HTTP_PORT:-4318}:4318" # OTLP HTTP receiver
-    depends_on:
-      - jaeger
+    command: ["--config=/etc/otelcol/config.yaml", "--feature-gates=ottl.set.allowNil"]
+    volumes: ["./config/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro"]
+    depends_on: [jaeger]
     healthcheck:
       test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
       interval: 5s
       timeout: 5s
       retries: 6
-      start_period: 5s
-    networks:
-      - ide-net
+    networks: [mediation, telemetry]
 
   guardrail-proxy:
-    build:
-      context: ./docker
-      dockerfile: Dockerfile.guardrail
-    container_name: guardrail-proxy
+    <<: *restricted
+    build: {context: ./docker, dockerfile: Dockerfile.guardrail}
     restart: unless-stopped
-    ports:
-      - "${LOOM_GUARDRAIL_PORT:-9090}:9090"
     environment:
-      - PII_PRESIDIO_URL=${PII_PRESIDIO_URL:-http://presidio-analyzer:5002}
+      - PII_PRESIDIO_URL=http://presidio-analyzer:5002
       - PII_THRESHOLD=${PII_THRESHOLD:-0.7}
     depends_on:
-      presidio-analyzer:
-        condition: service_healthy
+      presidio-analyzer: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9090/health"]
       interval: 3s
       timeout: 2s
       retries: 10
-      start_period: 3s
-    networks:
-      - ide-net
+    networks: [mediation, inspection]
 
   presidio-analyzer:
-    image: mcr.microsoft.com/presidio-analyzer:latest
-    container_name: presidio-analyzer
+    <<: *restricted
+    image: mcr.microsoft.com/presidio-analyzer@sha256:286e3fa7f3a7426e775e8564fe1870f1ba8f999d3ab8bbb8cc46a44355d9d6e9
+    user: "1001:1001"
     restart: unless-stopped
+    mem_limit: 3g
+    cpus: 2.0
     environment:
-      - ANALYZER_CONF_FILE=/usr/bin/conf/default_analyzer.yaml
+      - PORT=5002
+      - GUNICORN_CMD_ARGS=--control-socket /tmp/gunicorn.ctl
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5002/health"]
       interval: 5s
       timeout: 3s
-      retries: 12
-      start_period: 15s
-    networks:
-      - ide-net
+      retries: 24
+      start_period: 20s
+    networks: [inspection]
 
   swarm-lab:
+    <<: *restricted
     profiles: ["lab"]
-    build:
-      context: ./docker
-      dockerfile: Dockerfile.lab
-    environment:
-      - GUARDRAIL_URL=http://guardrail-proxy:9090
+    build: {context: ./docker, dockerfile: Dockerfile.lab}
+    environment: ["GUARDRAIL_URL=http://guardrail-proxy:9090"]
     depends_on:
-      guardrail-proxy:
-        condition: service_healthy
-    networks:
-      - ide-net
+      guardrail-proxy: {condition: service_healthy}
+    networks: [mediation]
 
-  # ── Ingestion Pipeline (profile: pipeline) ────────────────────────────────
-  # Medallion architecture: Bronze → Silver (PII scrub) → Gold (embed + vec)
-  # RAG endpoint: retrieve from gold → augment → agentgateway → OpenRouter LLM
-  #
-  # Start with: make pipeline
-  # Or manually: docker compose --profile pipeline up -d pipeline
+  # Optional local-only prototype. Shared production ingestion is not supported.
   pipeline:
+    <<: *restricted
     profiles: ["pipeline"]
-    build:
-      context: ./pipeline
-      dockerfile: Dockerfile
-    container_name: pipeline
+    build: {context: ./pipeline, dockerfile: Dockerfile}
     restart: unless-stopped
-    ports:
-      - "${LOOM_PIPELINE_PORT:-8181}:8181"
+    user: "65532:65532"
+    mem_limit: 3g
+    ports: ["127.0.0.1:${LOOM_PIPELINE_PORT:-8181}:8181"]
     environment:
-      - AGENTGATEWAY_URL=http://agentgateway:8080/v1
+      - AGENTGATEWAY_URL=http://control-plane:8080/v1
+      - LOOM_TOKEN_FILE=/run/loom/client.token
       - GUARDRAIL_URL=http://guardrail-proxy:9090
       - PRESIDIO_URL=http://presidio-analyzer:5002
-      - PII_THRESHOLD=${PII_THRESHOLD:-0.7}
-      - DEFAULT_RAG_MODEL=${DEFAULT_RAG_MODEL:-openai/gpt-4o-mini}
       - DB_PATH=/data/loom.db
       - MODEL_CACHE_DIR=/models
+      - HF_HUB_OFFLINE=1
     volumes:
+      - ./.loom/pipeline.token:/run/loom/client.token:ro
       - pipeline-data:/data
       - pipeline-models:/models
     depends_on:
-      guardrail-proxy:
-        condition: service_healthy
-      presidio-analyzer:
-        condition: service_healthy
-      agentgateway:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8181/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 15
-      start_period: 30s
-    networks:
-      - ide-net
+      control-plane: {condition: service_healthy}
+    networks: [client-net, inspection]
 
 networks:
-  ide-net:
-    driver: bridge
-    name: ide-net
-
+  client-net: {}
+  mediation: {internal: true}
+  inspection: {internal: true}
+  telemetry: {internal: true}
+  observability-ui: {}
+  provider-egress: {}
 volumes:
-  # SQLite database file for the three medallion layers
-  pipeline-data:
-    name: loom-pipeline-data
-  # sentence-transformers model cache (all-MiniLM-L6-v2, ~90 MB)
-  pipeline-models:
-    name: loom-pipeline-models
+  pipeline-data: {}
+  pipeline-models: {}
+  security-audit: {}

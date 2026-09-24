@@ -10,7 +10,7 @@ Security updates, vulnerability patches, and configuration fixes are actively pr
 
 | Version | Supported | Notes |
 | :--- | :--- | :--- |
-| `1.x` / `main` | :white_check_mark: | Active production release branch |
+| `1.x` / `main` | :white_check_mark: | Active development branch |
 | `< 1.0` | :x: | Legacy scaffold versions; upgrade recommended |
 
 ---
@@ -46,30 +46,35 @@ To help us investigate and triage the issue quickly, please provide:
 
 ---
 
-## 4. Security Architecture & Trust Boundaries
+## 4. Runtime boundaries and limitations
 
-The Loom platform enforces multi-layered defense-in-depth:
+This repository is a local developer deployment. Read the
+[threat model](docs/security-threat-model.md), [implementation evidence](docs/security-implementation.md)
+and [remaining production work](docs/security-roadmap.md) before deployment.
 
-```
-[Developer Client / Web IDE]
-              │ (HTTP / JSON)
-              ▼
-    [Agentgateway Proxy]
-       │             │
- (Pre-Execution)     │ (Allowed Request)
-       ▼             ▼
-[Guardrail Proxy]  [Upstream LLM Provider (OpenRouter)]
- (403 Blocked /    [Model Context Protocol (MCP) Tools]
-  200 Allowed)       │ (Enforced by CEL Authorization Policy)
-                     ▼
-             [Workspace Container]
-```
+Client traffic now enters an authenticated control plane before Agentgateway.
+Versioned policy checks actor/workload/resource/destination context. Agentgateway
+retains request/response hooks and CEL default deny. MCP execution is limited to
+two bounded read-only operations; OS descriptor traversal rejects symlinks.
+Detection failure denies model dispatch and ingestion promotion.
 
-### Key Security Invariants
-- **Synchronous Guardrail Interception**: All LLM queries are inspected synchronously before upstream dispatch. Destructive commands (`sudo`, `rm -rf`, fork bombs, system file reads) are blocked with `403 Forbidden`.
-- **CEL Default-Deny MCP Tool Authorization**: Model Context Protocol tool execution requires explicit allow-listing via Common Expression Language (CEL). Unmatched tools evaluate to `deny`.
-- **Network Isolation**: Inter-container communication is bound to the isolated internal `ide-net` Docker bridge. External access is strictly controlled via defined host port bindings.
-- **Least-Privilege Secret Isolation**: API keys (`OPENROUTER_API_KEY`) and authentication credentials are injected via environment variables and never baked into container images or logged.
+All host ports bind to loopback; raw gateway, guardrail and OTLP services are
+internal. Core containers run as non-root with dropped capabilities, read-only
+roots and resource limits. The IDE remains a writable development environment.
+Provider credentials are held by Agentgateway, not by the filesystem child's
+environment. A compromised gateway can still misuse its own provider credential.
+
+Security events contain server-generated trace/decision IDs, policy reasons and
+action digests, never raw request bodies/arguments. Local audit storage is not
+immutable. Collector attribute suppression does not protect a compromised host
+or collector. Detector success does not prove that content contains no secrets.
+
+Security CI blocks HIGH/CRITICAL dependency and image findings. Exceptions need
+a reviewed issue containing the exact finding, owner, rationale, compensating
+control and expiry; there are no blanket ignore-unfixed or allow-failure settings.
+Update immutable image/action references through reviewed dependency PRs, rebuild,
+scan and rerun runtime tests. OCI SBOM/provenance metadata is generated in CI;
+signature verification before deployment remains required production work.
 
 ---
 

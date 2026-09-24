@@ -46,3 +46,6 @@ tmp/
 dist/
 build/
 .cache/
+
+.loom/
+__pycache__/

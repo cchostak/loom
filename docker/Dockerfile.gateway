@@ -1,45 +1,17 @@
-# ==============================================================================
-# Agentgateway Dockerfile with Node.js & NPM for STDIO MCP execution
-# ==============================================================================
+FROM ghcr.io/agentgateway/agentgateway:v1.5.0@sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896 AS gateway
+FROM golang:1.26.1-alpine@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder
+WORKDIR /src
+COPY docker/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-w -s" -o /loom-filesystem ./cmd/filesystem
 
-# Keep the binary and configuration schema on the same tested release. The
-# upstream image is distroless and stores the binary at /app/agentgateway.
-ARG AGENTGATEWAY_VERSION=v1.5.0
-FROM ghcr.io/agentgateway/agentgateway:${AGENTGATEWAY_VERSION} AS agentgateway-upstream
-
-# Agentgateway v1.5 requires glibc >= 2.39; Debian Trixie supplies a compatible
-# runtime while retaining Node.js, npm, and npx for local stdio MCP servers.
-FROM node:20-trixie-slim
-
-LABEL maintainer="Home IDE Powerhouse"
-LABEL description="Agentgateway runtime equipped with Node.js and npm for local STDIO MCP execution"
-
-# Install essential system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    git \
-    python3 \
-    python3-pip \
-    bash \
-    procps \
+# Agentgateway requires glibc >= 2.39. No Node/npm/git/Python runtime.
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Install standard MCP server packages globally for fast offline invocation
-RUN npm install -g \
-    @modelcontextprotocol/server-filesystem@2026.7.10
-
-# Copy the single upstream binary into the richer MCP runtime image. Dockerfile
-# COPY does not support shell redirection or "|| true"; those tokens are parsed
-# as source paths and were the reason `make up` failed.
-COPY --from=agentgateway-upstream /app/agentgateway /usr/local/bin/agentgateway
-
-# Set up working directory for workspace mounts
+COPY --from=gateway /app/agentgateway /usr/local/bin/agentgateway
+COPY --from=builder /loom-filesystem /usr/local/bin/loom-filesystem
+USER 65532:65532
 WORKDIR /workspace
-
-# Expose LLM (8080) and MCP (3000) endpoints
 EXPOSE 8080 3000
-
-# Default entrypoint and config flag
 ENTRYPOINT ["agentgateway"]
 CMD ["-f", "/etc/agentgateway/config.yaml"]

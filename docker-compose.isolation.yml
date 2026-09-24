@@ -38,6 +38,9 @@
 # ==============================================================================
 
 services:
+  control-plane:
+    runtime: runsc
+
   guardrail-proxy:
     runtime: runsc
 

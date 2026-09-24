@@ -14,9 +14,8 @@ runner, and compares every scenario twice:
 
 1. An intentionally unprotected baseline, which proves the attack chain can
    reach its objective.
-2. A defended run through Loom's live Agentgateway-compatible request and
-   response webhook API, least-privilege capability policy, and delegation
-   trust boundary.
+2. A defended simulation using the live guardrail webhook plus in-memory
+   capability and delegation checks. Those two checks are lab-only.
 
 No LLM provider key is required. The scenarios never run shell commands,
 change files, or send data to an external endpoint. Use `make lab-json` to emit
@@ -51,3 +50,13 @@ a production swarm.
 The lab's reusable engine lives in `docker/swarm/`; the CLI entry point is
 `docker/cmd/swarm-lab/`. Add scenarios in `docker/swarm/scenarios.go` and add a
 unit test for every new control or branch.
+
+## Runtime enforcement tests
+
+Run `python3 tests/gateway_security.py` against `make up` for actual authenticated
+control-plane → Agentgateway → stdio filesystem checks. This is separate from the
+swarm score. It verifies read/discovery success, unknown/write/exec denial, strict
+arguments, path/symlink confinement, session binding and decision IDs. Go tests
+exercise identity spoofing, policy/guard outages, audit failure, budgets and
+approval tampering using controlled dependencies. No lab score is a production
+security certification.

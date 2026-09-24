@@ -37,6 +37,8 @@ print('Embedding model cached.')"
 # Copy application source
 COPY app/ ./app/
 
+RUN mkdir -p /data && chown -R 65532:65532 /data /models
+USER 65532:65532
 EXPOSE 8181
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=15 --start-period=20s \

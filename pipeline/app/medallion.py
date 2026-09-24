@@ -91,7 +91,7 @@ async def promote_silver(conn: sqlite3.Connection, doc_id: str) -> str | None:
 
     content: str = row["content"]
 
-    # 1. Forbidden-pattern guard (fail closed on block, open on unreachable)
+    # 1. Guardrail errors leave the document pending; never promote unchecked.
     try:
         await validate(content)
     except ContentBlockedError:
@@ -101,11 +101,8 @@ async def promote_silver(conn: sqlite3.Connection, doc_id: str) -> str | None:
                 (doc_id,),
             )
         return None
-    except GuardrailError:
-        # Guardrail unreachable — fail open, log upstream
-        pass
 
-    # 2. PII scrubbing (fail open)
+    # 2. PII scrubbing (fail closed)
     scrubbed, entities = await scrub_pii(content)
 
     # 3. Normalise

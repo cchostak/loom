@@ -67,13 +67,16 @@ func (g *HTTPGuard) Inspect(ctx context.Context, phase Phase, content string) (D
 	}
 
 	var result struct {
-		Action struct {
+		Action *struct {
 			StatusCode int    `json:"status_code"`
 			Reason     string `json:"reason"`
 		} `json:"action"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 		return Decision{}, fmt.Errorf("decode guardrail response: %w", err)
+	}
+	if result.Action == nil || result.Action.Reason == "" || (result.Action.StatusCode != 0 && result.Action.StatusCode != 403) {
+		return Decision{}, fmt.Errorf("invalid guardrail action")
 	}
 	return Decision{Blocked: result.Action.StatusCode != 0, Reason: result.Action.Reason}, nil
 }

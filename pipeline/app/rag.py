@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from pathlib import Path
 
 import httpx
 import sqlite_vec
@@ -94,7 +95,7 @@ async def generate(
         resp = await client.post(
             f"{AGENTGATEWAY_URL}/chat/completions",
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + Path(os.environ["LOOM_TOKEN_FILE"]).read_text().strip()},
         )
         resp.raise_for_status()
 

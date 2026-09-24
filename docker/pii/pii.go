@@ -2,7 +2,7 @@
 //
 // It calls the Presidio Analyzer REST API (POST /analyze) running as a sidecar
 // service and replaces detected entities with [ENTITY_TYPE] placeholders so
-// that sensitive data never reaches LLM backends or audit logs.
+// callers must enforce rejection or forward the transformed bytes themselves.
 package pii
 
 import (
@@ -27,10 +27,10 @@ type Entity struct {
 
 // analyzeRequest is the Presidio /analyze request body.
 type analyzeRequest struct {
-	Text      string    `json:"text"`
-	Language  string    `json:"language"`
-	Threshold float64   `json:"score_threshold"`
-	Entities  []string  `json:"entities,omitempty"`
+	Text      string   `json:"text"`
+	Language  string   `json:"language"`
+	Threshold float64  `json:"score_threshold"`
+	Entities  []string `json:"entities,omitempty"`
 }
 
 // Scrubber calls Presidio to detect and redact PII from text.
@@ -80,18 +80,29 @@ func (s *Scrubber) Analyze(ctx context.Context, text string) ([]Entity, error) {
 	}
 	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, (1<<16)+1))
 	if err != nil {
 		return nil, fmt.Errorf("pii: read response: %w", err)
 	}
 
+	if len(respBytes) > 1<<16 {
+		return nil, fmt.Errorf("pii: response limit")
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("pii: presidio returned %d: %s", resp.StatusCode, respBytes)
+		return nil, fmt.Errorf("pii: presidio returned %d", resp.StatusCode)
 	}
 
 	var entities []Entity
 	if err := json.Unmarshal(respBytes, &entities); err != nil {
 		return nil, fmt.Errorf("pii: decode response: %w", err)
+	}
+	if entities == nil {
+		return nil, fmt.Errorf("pii: missing analysis")
+	}
+	for _, entity := range entities {
+		if entity.Start < 0 || entity.End <= entity.Start || entity.End > len([]rune(text)) || entity.EntityType == "" || entity.Score < 0 || entity.Score > 1 {
+			return nil, fmt.Errorf("pii: invalid entity")
+		}
 	}
 	return entities, nil
 }

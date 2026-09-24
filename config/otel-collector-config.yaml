@@ -1,43 +1,49 @@
-# ==============================================================================
-# OpenTelemetry Collector Configuration
-# ==============================================================================
-
 receivers:
   otlp:
     protocols:
-      grpc:
-        endpoint: 0.0.0.0:4317
-      http:
-        endpoint: 0.0.0.0:4318
+      grpc: {endpoint: "0.0.0.0:4317"}
+      http: {endpoint: "0.0.0.0:4318"}
 
 processors:
-  batch:
-    timeout: 1s
-    send_batch_size: 256
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/privacy:
+    error_mode: propagate
+    trace_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, [])
+          - set(attributes["service.name"], "loom")
+      - context: scope
+        statements:
+          - set(name, "loom")
+          - set(version, "")
+          - keep_keys(attributes, [])
+      - context: span
+        statements:
+          - set(name, "loom.operation")
+          - set(status.message, "")
+          - keep_keys(attributes, [])
+          - set(trace_state, "")
+          - set(links, nil)
+      - context: spanevent
+        statements:
+          - set(name, "loom.event")
+          - keep_keys(attributes, [])
+  batch: {timeout: 1s, send_batch_size: 256}
 
 exporters:
   otlp_grpc:
     endpoint: jaeger:4317
-    tls:
-      insecure: true
-  debug:
-    verbosity: normal
+    tls: {insecure: true}
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp_grpc, debug]
-    metrics:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
-    logs:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
-
+      processors: [memory_limiter, transform/privacy, batch]
+      exporters: [otlp_grpc]
   telemetry:
-    logs:
-      level: info
+    logs: {level: warn}

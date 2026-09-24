@@ -31,6 +31,7 @@ init: ## Initialize directory structure, templates, and environment files
 	else \
 		echo "$(GREEN)✓ .env already exists.$(NC)"; \
 	fi
+	@python3 scripts/bootstrap.py
 	@echo "$(GREEN)✓ Initialization complete.$(NC)"
 
 up: init ## Build and start all services in detached mode
@@ -57,11 +58,9 @@ trace: ## Display service dashboard endpoints and Jaeger tracing guide
 	@echo "================================================================"
 	@echo " Code-Server (Web IDE):  http://localhost:$$(docker compose port vscode 8080 | awk -F: 'NR == 1 {print $$NF}') (Password in .env)"
 	@echo " Jaeger UI (Tracing):    http://localhost:$$(docker compose port jaeger 16686 | awk -F: 'NR == 1 {print $$NF}')"
-	@echo " Agentgateway (LLM):     http://localhost:$$(docker compose port agentgateway 8080 | awk -F: 'NR == 1 {print $$NF}')/v1"
-	@echo " Agentgateway (MCP):     http://localhost:$$(docker compose port agentgateway 3000 | awk -F: 'NR == 1 {print $$NF}')"
-	@echo " Guardrail Proxy Health: http://localhost:$$(docker compose port guardrail-proxy 9090 | awk -F: 'NR == 1 {print $$NF}')/health"
+	@echo " Agentgateway (LLM):     http://localhost:$$(docker compose port control-plane 8080 | awk -F: 'NR == 1 {print $$NF}')/v1"
+	@echo " Agentgateway (MCP):     http://localhost:$$(docker compose port control-plane 8080 | awk -F: 'NR == 1 {print $$NF}')"
 	@echo " Adversarial Swarm Lab:   make lab"
-	@echo " OTel Collector (gRPC):  localhost:$$(docker compose port otel-collector 4317 | awk -F: 'NR == 1 {print $$NF}')"
 	@if docker compose ps pipeline 2>/dev/null | grep -q 'running\|Up'; then \
 		echo " Pipeline API:           http://localhost:$$(docker compose --profile pipeline port pipeline 8181 | awk -F: 'NR == 1 {print $$NF}')"; \
 		echo " Pipeline Docs (OpenAPI):http://localhost:$$(docker compose --profile pipeline port pipeline 8181 | awk -F: 'NR == 1 {print $$NF}')/docs"; \
