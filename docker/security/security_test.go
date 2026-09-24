@@ -135,7 +135,7 @@ func FuzzWorkspacePath(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		r, err := WorkspacePath(s)
-		if err == nil && (strings.HasPrefix(r, "/") || strings.Contains(r, ".."+"/")) {
+		if err == nil && (strings.HasPrefix(r, "/") || strings.HasPrefix(r, "../") || strings.Contains(r, "/../") || r == "..") {
 			t.Fatal(s, r)
 		}
 	})

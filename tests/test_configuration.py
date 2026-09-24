@@ -49,7 +49,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_no_runtime_package_execution(self):
         config = (ROOT / "config/agentgateway-config.yaml").read_text()
         self.assertNotIn("npx", config)
-        self.assertIn('"-i", "/usr/local/bin/loom-filesystem"', config)
+        self.assertIn('args: ["--isolated"]', config)
         for name in ("gateway", "guardrail", "control", "lab"):
             self.assertIn("USER 65532:65532", (ROOT / f"docker/Dockerfile.{name}").read_text())
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -72,7 +73,11 @@ func (g *HTTPGuard) Inspect(ctx context.Context, phase Phase, content string) (D
 			Reason     string `json:"reason"`
 		} `json:"action"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 16385))
+	if err != nil || len(responseBody) > 16384 {
+		return Decision{}, fmt.Errorf("guardrail response limit")
+	}
+	if err := json.Unmarshal(responseBody, &result); err != nil {
 		return Decision{}, fmt.Errorf("decode guardrail response: %w", err)
 	}
 	if result.Action == nil || result.Action.Reason == "" || (result.Action.StatusCode != 0 && result.Action.StatusCode != 403) {

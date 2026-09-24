@@ -1,17 +1,14 @@
 FROM ghcr.io/agentgateway/agentgateway:v1.5.0@sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896 AS gateway
-FROM golang:1.26.1-alpine@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder
+FROM golang:1.26.8-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS builder
 WORKDIR /src
 COPY docker/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-w -s" -o /loom-filesystem ./cmd/filesystem
 
-# Agentgateway requires glibc >= 2.39. No Node/npm/git/Python runtime.
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=gateway /app/agentgateway /usr/local/bin/agentgateway
+# Retain upstream's minimal compatible runtime. No shell, curl, Node or npm.
+FROM gateway
 COPY --from=builder /loom-filesystem /usr/local/bin/loom-filesystem
 USER 65532:65532
 WORKDIR /workspace
 EXPOSE 8080 3000
-ENTRYPOINT ["agentgateway"]
+ENTRYPOINT ["/app/agentgateway"]
 CMD ["-f", "/etc/agentgateway/config.yaml"]

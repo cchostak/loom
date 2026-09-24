@@ -8,7 +8,7 @@ It is a production-oriented foundation, **not yet a shared production service**.
 ## Quickstart
 
 Requirements: Docker Engine with Compose, Python 3, and enough memory for Presidio
-(the analyzer has a 3 GiB container limit). Go 1.26.1 is needed for local Go tests;
+(the analyzer has a 3 GiB container limit). Go 1.26.8 is needed for local Go tests;
 Docker builds supply their own compiler.
 
 ```bash
@@ -79,6 +79,8 @@ forwarded. Missing, slow or malformed security dependency responses deny.
 String patterns and Presidio can miss attacks; tool capability restrictions
 remain independent of model obedience.
 
+Model/tool circuits pause new dispatch for 30 seconds after three upstream failures.
+
 Defaults per authenticated session: 60 requests/minute, 500 admitted operations,
 4 concurrent operations, a one-hour workflow lifetime, 64 KiB input, 4,096 requested
 output tokens, 1 MiB response and a 30-second action timeout. These are local
@@ -134,7 +136,8 @@ application policy. Host compromise is outside container protection.
 
 Audit records live in the `security-audit` volume as `security.jsonl`; traces are
 operational data, not the security audit log. Arrange rotation, access controls,
-retention and off-host integrity protection before sustained use.
+retention and off-host integrity protection before sustained use. The local audit
+file stops accepting events at 100 MiB; maintain it with the control plane stopped.
 
 Read the [threat model](docs/security-threat-model.md),
 [prioritized roadmap](docs/security-roadmap.md), and [security policy](SECURITY.md).

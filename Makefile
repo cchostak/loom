@@ -141,7 +141,7 @@ up-isolated: init ## Start the stack with gVisor container isolation (run make s
 	docker compose -f docker-compose.yml -f docker-compose.isolation.yml up -d --build --wait --wait-timeout 120
 	@echo ""
 	@$(MAKE) trace
-	@echo -e "$(CYAN)  Isolation mode:$(NC) guardrail-proxy, presidio-analyzer, agentgateway → runsc (gVisor)"
+	@echo -e "$(CYAN)  Isolation mode:$(NC) control-plane, guardrail-proxy, presidio-analyzer, agentgateway → runsc (gVisor)"
 	@echo -e "$(CYAN)  Verify:$(NC) docker inspect guardrail-proxy --format '{{.HostConfig.Runtime}}'"
 
 pipeline: init ## Build and start the ingestion pipeline (medallion + RAG) and ingest sample data
@@ -160,16 +160,13 @@ pipeline-rag: ## Run a demo RAG query against the ingested sample data
 		-d '{"query": "How does the guardrail proxy protect LLM responses?", "k": 4}' \
 		| python3 -m json.tool || echo "Pipeline service not running — run: make pipeline"
 
-scan: ## Run local secret and vulnerability audits
-	@echo "==> Checking for accidental secret leaks..."
-	@if command -v gitleaks >/dev/null 2>&1; then \
-		gitleaks detect --no-git -v; \
-	elif docker run --rm -v "$$(pwd):/path" zricethezav/gitleaks:latest detect --source="/path" --verbose --no-git 2>/dev/null; then \
-		echo -e "$(GREEN)✓ Gitleaks container scan passed.$(NC)"; \
-	else \
-		echo -e "$(YELLOW)ℹ Gitleaks not installed; checking for obvious key leaks...$(NC)"; \
-		grep -rnE 'sk-or-v1-[a-zA-Z0-9]{30,}' . --exclude=.env.example --exclude=.env || echo -e "$(GREEN)✓ No raw API keys detected.$(NC)"; \
-	fi
+scan: ## Enforce dependency, secret and core-image vulnerability gates (requires Trivy)
+	@command -v trivy >/dev/null || { echo "Install Trivy before running make scan."; exit 1; }
+	trivy fs --cache-dir .loom/trivy-cache --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
+		--skip-dirs .loom --skip-dirs .git --skip-files .env .
+	@for image in loom-control-plane loom-guardrail-proxy loom-agentgateway; do \
+		trivy image --cache-dir .loom/trivy-cache --scanners vuln --severity HIGH,CRITICAL --exit-code 1 "$$image" || exit $$?; \
+	done
 
 doctor: ## Validate prerequisite CLI tools, Docker daemon, network ports, and .env
 	@echo "================================================================"
@@ -208,8 +205,8 @@ doctor: ## Validate prerequisite CLI tools, Docker daemon, network ports, and .e
 		echo -e "   $(RED)✗ config/otel-collector-config.yaml is missing.$(NC)"; \
 	fi
 	@echo ""
-	@echo "4. Checking Port Availability (8080, 8443, 9090, 16686, 4317, 3000):"
-	@for port in 8080 8443 9090 16686 4317 3000; do \
+	@echo "4. Checking Port Availability (8080, 8443, 16686, 3000):"
+	@for port in 8080 8443 16686 3000; do \
 		if command -v nc > /dev/null 2>&1; then \
 			if nc -z 127.0.0.1 $$port > /dev/null 2>&1; then \
 				echo -e "   $(YELLOW)⚠ Port $$port is currently in use (possibly by running Loom stack).$(NC)"; \
@@ -236,8 +233,7 @@ doctor: ## Validate prerequisite CLI tools, Docker daemon, network ports, and .e
 	@echo "================================================================"
 	@echo -e "$(BOLD)$(GREEN)✓ Doctor diagnostic check finished.$(NC)"
 
-clean: down ## Stop containers, remove volumes, and clean coverage/binary artifacts
-	@echo "==> Cleaning container volumes and test artifacts..."
-	docker compose down -v 2>/dev/null || true
+clean: down ## Stop containers and clean build artifacts; retain audit/data volumes
+	@echo "==> Cleaning test artifacts; audit and data volumes are retained."
 	@rm -f docker/coverage.out docker/coverage.html docker/guardrail
 	@echo "$(GREEN)✓ Cleanup complete.$(NC)"

@@ -9,7 +9,7 @@ Thank you for your interest in contributing to Loom! This document outlines our 
 Ensure you have the following tools installed locally:
 
 - **Docker & Docker Compose**: Docker Engine 24.0+ / Docker Compose v2.20+
-- **Go**: Version 1.22+ (for developing and testing the guardrail proxy)
+- **Go**: Version 1.26.8+ (for developing and testing the guardrail proxy)
 - **Make**: GNU Make 4.0+
 - **Git**: Version 2.30+
 - **pre-commit** *(recommended)*: For automated local linting and secret scanning (`pip install pre-commit`)
@@ -59,7 +59,7 @@ make doctor
 ### Branch Naming Conventions
 - `feat/<short-description>`: New features or capabilities (e.g., `feat/add-trivy-scanner`)
 - `fix/<short-description>`: Bug fixes and security patches (e.g., `fix/guardrail-regex-boundary`)
-- `chore/<short-description>`: Tooling, dependency updates, and maintenance (e.g., `chore/bump-go-1.22`)
+- `chore/<short-description>`: Tooling, dependency updates, and maintenance (e.g., `chore/bump-go-patch`)
 - `docs/<short-description>`: Documentation changes and ADRs (e.g., `docs/add-cel-policy-guide`)
 - `sec/<short-description>`: Security enhancements and hardening (e.g., `sec/remediate-gitleaks-finding`)
 
@@ -141,3 +141,12 @@ Every code change must include accompanying automated tests:
 4. CI checks (`ci.yml` and `security.yml`) must pass before review.
 5. Address reviewer comments promptly and rebase if conflicts arise.
 6. Squash-and-merge is performed once approved by code owners.
+
+## Security verification
+
+Follow the [current security test commands](docs/security-implementation.md).
+Run `make init` before Compose, configure the generated bearer credential in API
+clients, and run `tests/smoke_test.sh` for real gateway, telemetry and container
+checks. `make scan` requires Trivy and fails on HIGH/CRITICAL findings; it does not
+replace a missing scanner with a grep check. `make clean` preserves audit/data
+volumes. Do not commit `.env`, `.loom/` or test reports containing private data.

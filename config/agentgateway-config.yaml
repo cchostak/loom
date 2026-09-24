@@ -35,8 +35,8 @@ mcp:
   targets:
     - name: "filesystem"
       stdio:
-        cmd: "/usr/bin/env"
-        args: ["-i", "/usr/local/bin/loom-filesystem"]
+        cmd: "/usr/local/bin/loom-filesystem"
+        args: ["--isolated"]
 
   policies:
     mcpAuthorization:

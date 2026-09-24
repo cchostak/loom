@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,5 +29,20 @@ func TestStdioProcess(t *testing.T) {
 				t.Fatal("bad protocol or credential leak")
 			}
 		})
+	}
+}
+
+func TestHealthProbe(t *testing.T) {
+	for _, status := range []int{200, 204, 301, 401, 403, 500} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+			defer server.Close()
+			if healthy(server.URL) != (status == 200) {
+				t.Fatal(status)
+			}
+		})
+	}
+	if healthy("http://127.0.0.1:1") {
+		t.Fatal("outage")
 	}
 }

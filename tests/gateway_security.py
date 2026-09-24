@@ -6,6 +6,7 @@ No provider call, destructive tool or external destination is used.
 import json
 from pathlib import Path
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
@@ -48,6 +49,7 @@ def run():
     fixture = ROOT / "workspace/loom-security-fixture.txt"
     link = ROOT / "workspace/loom-security-link"
     fixture_created = link_created = False
+    trace = None
     try:
         with fixture.open("x") as file:
             file.write("Loom inert security fixture\n")
@@ -72,12 +74,26 @@ def run():
             if allowed:
                 assert "Loom inert security fixture" in json.dumps(body), "wrong file"
                 assert headers.get("X-Loom-Decision-ID") and headers.get("X-Loom-Trace-ID"), "missing correlation"
+                trace = headers["X-Loom-Trace-ID"]
         assert request(url, initialize, token, "invented-session")[0] == 403, "session spoof allowed"
     finally:
         if fixture_created:
             fixture.unlink()
         if link_created:
             link.unlink()
+    jaeger = subprocess.check_output(["docker", "compose", "port", "jaeger", "16686"], cwd=ROOT, text=True).strip()
+    correlated = False
+    for _ in range(15):
+        try:
+            with urllib.request.urlopen("http://" + jaeger + "/api/traces/" + trace, timeout=5) as response:
+                correlated = bool(json.loads(response.read()).get("data"))
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        if correlated:
+            break
+        time.sleep(1)
+    assert correlated, "gateway trace did not correlate with boundary decision"
     print("PASS: authenticated real gateway discovery/read, unknown/write/exec/argument/traversal/symlink denial, session binding and decision correlation")
 
 

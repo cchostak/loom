@@ -46,7 +46,7 @@ services:
     depends_on:
       guardrail-proxy: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/models"]
+      test: ["CMD", "/usr/local/bin/loom-filesystem", "--health"]
       interval: 5s
       timeout: 3s
       retries: 12

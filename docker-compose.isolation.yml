@@ -33,8 +33,8 @@
 #
 #   otel-collector,
 #   jaeger             → runc (default): infrastructure services that handle
-#                        only internal telemetry data and have no external-facing
-#                        attack surface in this stack.
+#                        untrusted telemetry; Jaeger also has a loopback UI.
+#                        They remain attack surfaces despite private receivers.
 # ==============================================================================
 
 services:

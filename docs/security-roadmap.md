@@ -1,7 +1,9 @@
 # Security implementation roadmap
 
-This plan prioritizes mandatory mediation over prompt-string additions. Status
-and test evidence are recorded in security-implementation.md after validation.
+This plan prioritizes mandatory mediation over prompt-string additions. The
+first-increment table below is implemented; limitations and tested scope are in
+[security-implementation.md](security-implementation.md). Follow-on entries
+remain open and block a shared production deployment where marked P0/P1.
 
 | Priority | Work | Acceptance criteria |
 | --- | --- | --- |
@@ -41,6 +43,10 @@ and test evidence are recorded in security-implementation.md after validation.
   durable one-time consumption and executor reauthorization. Acceptance: mutated,
   expired, replayed or revoked approval cannot execute. Never expose signing keys
   to requesting agents. This increment must not enable privileged writes.
+* **P2: Shadow policy rollout** — evaluate a candidate policy alongside the live
+  policy and record decision differences without granting candidate authority.
+  Acceptance: shadow allows never override live denies; versioned rollback is
+  tested before activation.
 * **P2: Broader MCP tools** — one schema/resource adapter per tool, isolated server
   identities and pinned metadata. Acceptance: metadata cannot introduce new grants;
   attacker-controlled paths/URLs/arguments never expand capability.

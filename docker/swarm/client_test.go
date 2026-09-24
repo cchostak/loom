@@ -90,3 +90,15 @@ func TestDefaultScenariosCoverRequestAndResponse(t *testing.T) {
 		t.Fatalf("phases = %v, want request and response", phases)
 	}
 }
+
+func TestHTTPGuardRejectsAmbiguousDecisions(t *testing.T) {
+	for _, body := range []string{`null`, `{}`, `{"action":null}`, `{"action":{}}`, `{"action":{"status_code":200,"reason":"bad"}}`, `{"action":{"reason":"pass"}} {}`, strings.Repeat("x", 16385)} {
+		t.Run(body[:min(len(body), 24)], func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
+			defer server.Close()
+			if _, err := NewHTTPGuard(server.URL).Inspect(context.Background(), PhaseRequest, "inert"); err == nil {
+				t.Fatal("ambiguous result allowed")
+			}
+		})
+	}
+}

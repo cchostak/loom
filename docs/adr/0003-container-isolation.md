@@ -1,7 +1,7 @@
 # ADR 0003 — Container Isolation Strategy
 
 **Date:** 2026-09-22
-**Status:** Accepted
+**Status:** Accepted; amended 2026-09-23
 **Deciders:** Loom maintainers
 
 ---
@@ -91,17 +91,18 @@ A hardened container-optimized host OS from AWS.
 
 ## Decision
 
-**Use gVisor (`runsc`) for the three security-sensitive services** via an
+**Use gVisor (`runsc`) for the four security-sensitive services** via an
 opt-in compose override (`docker-compose.isolation.yml`).
 
 | Service | Runtime | Reason |
 |---|---|---|
+| `control-plane` | `runsc` | Authenticates, authorizes and audits untrusted requests |
 | `guardrail-proxy` | `runsc` | Processes untrusted LLM content |
 | `presidio-analyzer` | `runsc` | Processes PII-laden text; broad Python syscall surface |
 | `agentgateway` | `runsc` | Holds the API key and routes all LLM traffic |
-| `vscode` | `runc` | Host volume mount incompatible with gVisor VFS |
-| `otel-collector` | `runc` | Internal telemetry only, no external attack surface |
-| `jaeger` | `runc` | Internal telemetry only, no external attack surface |
+| `vscode` | `runc` | Writable developer environment; optional isolation requires compatibility testing |
+| `otel-collector` | `runc` | Internal telemetry ingestion; still processes untrusted data |
+| `jaeger` | `runc` | Loopback UI and internal telemetry; still an attack surface |
 
 The isolation is opt-in (not the default `make up`) so contributors without
 gVisor installed are not blocked. CI runs on GitHub Actions runners that do not
@@ -124,3 +125,12 @@ by default due to the added RAM overhead and volume-mount complexity.
   the `presidio-analyzer` image before committing to the daemon configuration.
 - The `--with-kata` flag on `setup-isolation.sh` installs Kata Containers for
   future use (e.g. to sandbox `vscode`).
+
+## Current validation limits
+
+The hardening work validated the default Docker runtime, not gVisor or Kata.
+The host characteristics and performance estimates above describe the original
+proposal, not portable requirements or evidence for the current images. An
+optional sandbox adds a boundary; it does not guarantee containment or eliminate
+host-volume, provider-key, telemetry or network-egress risks. See the current
+[threat model](../security-threat-model.md) for those boundaries.
