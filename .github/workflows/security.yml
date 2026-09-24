@@ -87,7 +87,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: [guardrail, control, gateway]
+        include:
+          - {component: guardrail, context: ./docker, dockerfile: docker/Dockerfile.guardrail}
+          - {component: control, context: ./docker, dockerfile: docker/Dockerfile.control}
+          - {component: gateway, context: ., dockerfile: docker/Dockerfile.gateway}
+          - {component: strands, context: ./integrations/strands, dockerfile: integrations/strands/Dockerfile, target: runtime}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -96,8 +100,9 @@ jobs:
       - name: Build OCI artifact with SBOM and provenance
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
         with:
-          context: ${{ matrix.component == 'gateway' && '.' || './docker' }}
-          file: docker/Dockerfile.${{ matrix.component }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
           push: false
           tags: loom/${{ matrix.component }}:ci
           outputs: type=oci,dest=/tmp/image.tar

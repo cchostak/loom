@@ -2,7 +2,7 @@
 
 Strands proposes actions. Loom authenticates the caller and decides which model
 and MCP requests may run. This integration uses Strands Agents 1.57.0, with a
-locked dependency graph and an optional Docker Compose `agents` profile.
+locked Python 3.14 dependency graph, a digest-pinned minimal Chainguard image, and an optional Docker Compose `agents` profile.
 
 ## Run it
 
@@ -76,7 +76,8 @@ events. Models must return one object containing either `text` or `tool` and
 `input`. Tool calls and results are serialized into the existing text protocol;
 streaming, multimedia, provider tool-calling extensions and arbitrary endpoints
 are unsupported. The MCP adapter uses Strands MCPClient with a POST-only transport;
-server-initiated sampling, subscriptions, resumption and subprocess transports are
+an authenticated, owned DELETE releases each session on exit. Server-initiated
+sampling, subscriptions, resumption and subprocess transports are
 not available. Malformed responses fail closed.
 
 ## Trust and observations
@@ -114,7 +115,7 @@ its per-session operations, rate, concurrency, lifetime, input and output limits
 Container CPU, memory, process and file-descriptor limits constrain the process.
 
 Unavailable gateways, denials, redirects, malformed responses and timeouts have
-no direct-provider or direct-tool fallback. Tool errors remain errors. Local event
+no direct-provider or direct-tool fallback. Tool errors stop the reference workflow; they never commit a new handoff. Local event
 capacity failures stop execution; telemetry export availability does not change
 policy. Core audit failure prevents dispatch independently of client telemetry.
 

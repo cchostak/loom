@@ -26,7 +26,7 @@ func piiInspectionText(body string) string {
 	}
 	line := func(text string) { out.WriteString(text); out.WriteByte('\n') }
 	visit = func(value any, depth int) {
-		if depth > 8 {
+		if depth > 32 {
 			b, _ := json.Marshal(value)
 			line(string(b)) // Preserve, rather than silently discard, deeper content.
 			return

@@ -8,6 +8,7 @@ from mcp.shared.message import SessionMessage
 from strands.tools.mcp import MCPClient
 
 from loom_strands.connection import Connection, LoomFailure
+from loom_strands.context import DataContext
 
 
 @asynccontextmanager
@@ -16,8 +17,10 @@ async def transport(connection: Connection):
     incoming_send, incoming = anyio.create_memory_object_stream(8)
     outgoing, outgoing_receive = anyio.create_memory_object_stream(8)
 
+    session = ""
+
     async def exchange():
-        session = ""
+        nonlocal session
         async with outgoing_receive, incoming_send:
             async for message in outgoing_receive:
                 try:
@@ -37,6 +40,10 @@ async def transport(connection: Connection):
                     # Server-initiated requests/notifications are not capabilities.
                     if not isinstance(parsed.root, (types.JSONRPCResponse, types.JSONRPCError)):
                         raise LoomFailure("Unsupported MCP server message")
+                    if isinstance(parsed.root, types.JSONRPCResponse):
+                        metadata = parsed.root.result.get("_meta", {}).get("loom/provenance")
+                        if metadata is not None:
+                            connection.tool_data = DataContext.model_validate(metadata)
                     await incoming_send.send(SessionMessage(parsed))
                 except Exception:
                     await incoming_send.send(LoomFailure("MCP exchange failed"))
@@ -50,6 +57,10 @@ async def transport(connection: Connection):
             group.cancel_scope.cancel()
             await incoming.aclose()
             await outgoing.aclose()
+            # An owned DELETE closes Agentgateway's per-session stdio child.
+            # Shield teardown from task-group cancellation, but bound it to 5s.
+            with anyio.CancelScope(shield=True):
+                await connection.close_session(session)
 
 
 def client(connection: Connection) -> MCPClient:

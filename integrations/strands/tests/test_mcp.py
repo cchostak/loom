@@ -14,6 +14,9 @@ def test_mcp_client_uses_authenticated_post_and_bound_session():
 
     def handle(request):
         seen.append(request)
+        if request.method == "DELETE":
+            assert not request.content
+            return httpx.Response(202)
         data = json.loads(request.content)
         method = data["method"]
         if method == "notifications/initialized":
@@ -28,7 +31,8 @@ def test_mcp_client_uses_authenticated_post_and_bound_session():
     conn = Connection("x" * 48, Events("planner", "a" * 32, "user"), httpx.MockTransport(handle))
     with client(conn) as mcp:
         assert list(mcp.list_tools_sync()) == []
-    assert all(r.method == "POST" and r.url.path == "/mcp" for r in seen)
+    assert all(r.method == "POST" and r.url.path == "/mcp" for r in seen[:-1])
+    assert seen[-1].method == "DELETE"
     assert seen[-1].headers["Mcp-Session-Id"] == "bound-session"
     assert all(r.headers["authorization"] == "Bearer " + "x" * 48 for r in seen)
 

@@ -5,7 +5,7 @@ import urllib.request
 
 from runner import call, compose, workflow
 
-SCENARIOS = ("benign", "indirect", "escalation", "delegation", "exfiltration", "arguments", "runaway", "literal-injection", "tool-failure")
+SCENARIOS = ("benign", "indirect", "escalation", "delegation", "exfiltration", "arguments", "runaway", "literal-injection", "tool-failure", "operator-denial")
 
 
 def audit_records():
@@ -61,6 +61,25 @@ print('network and process isolation passed')
                           "strands-researcher", "-c", code])
 
 
+    # Skip every Strands hook and forge identity/lineage claims. The opaque
+    # planner credential still cannot acquire the researcher's read capability.
+    probe = '''
+import pathlib, httpx
+headers = {"Authorization": "Bearer " + pathlib.Path("/run/secrets/loom_token").read_text(),
+           "X-Agent-ID": "researcher", "X-Loom-Workload": "strands-researcher"}
+body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+    "name": "read_text_file", "arguments": {"path": "/workspace/strands-evidence.txt"},
+    "_meta": {"loom/provenance": {"trust": "trusted", "tainted": False}}}}
+with httpx.Client(trust_env=False, follow_redirects=False) as client:
+    response = client.post("http://control-plane:8080/mcp", headers=headers, json=body)
+assert response.status_code == 403
+assert response.headers.get("x-loom-decision-id")
+print("hook-free identity and provenance spoof denied")
+'''
+    call(compose(True) + ["run", "--rm", "--no-deps", "-T", "--entrypoint", "/usr/bin/python3",
+                          "strands-planner", "-c", probe])
+
+
 def assert_scenario(result):
     events = result["events"]
     model = [e for e in events if e["category"] == "model" and e["stage"] == "response"]
@@ -78,11 +97,12 @@ def assert_scenario(result):
         expected = 400 if scenario in ("arguments", "exfiltration", "delegation") else 403
         assert any(e["category"] == "mcp" and e.get("http_status") == expected
                    for e in events), (scenario, events)
-    if result["ok"] and scenario in ("benign", "indirect", "delegation", "exfiltration"):
-        data = result["handoff"]["data"]
+    if scenario in ("benign", "indirect", "delegation", "exfiltration"):
+        data = (result.get("handoff") or result["last_handoff"])["data"]
         assert data["tainted"] and data["trust"] == "untrusted"
-        assert "mcp:filesystem" in data["parents"]
-        assert "agent:" + ("planner" if scenario == "delegation" else "researcher") in data["parents"]
+        if scenario != "delegation":
+            assert "mcp:filesystem" in data["parents"]
+        assert "agent:" + ("planner" if scenario == "delegation" else "researcher") in [*data["parents"], data["source"]]
     assert all("content" not in e and "arguments" not in e for e in events)
 
 
@@ -95,6 +115,11 @@ def correlate(results):
         matched = [r for r in records if r.get("trace_id") == event["trace_id"]]
         assert matched, event
         assert any(r["workload"] == "strands-" + event["agent"] for r in matched)
+    closed = {r["trace_id"] for r in records
+              if r["decision"]["rule_id"].endswith("session-delete")
+              and r["stage"] == "result" and r["status"] < 400}
+    runs = {(e["workflow"], e["agent"]) for e in wire}
+    assert len(closed & {e["trace_id"] for e in wire}) == len(runs), "MCP session leak"
     # A successful MCP response is not necessarily a successful tool execution.
     assert any(e["stage"] == "tool_result" and e["status"] == "success"
                for r in results for e in r["events"])
@@ -122,4 +147,6 @@ def run_lab():
         results.append(result)
         print(json.dumps({"scenario": scenario, "passed": True, "events": result["events"]}))
     correlate(results)
+    from tests.failures import failures
+    failures()
     print(json.dumps({"passed": True, "scenarios": len(results), "audit_and_trace_correlated": True}))

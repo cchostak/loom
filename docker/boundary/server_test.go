@@ -237,7 +237,10 @@ func TestUpstreamFailureContainment(t *testing.T) {
 func TestGuardTimeoutPreventsDispatch(t *testing.T) {
 	s, calls, _ := setup(t)
 	guard := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(100 * time.Millisecond):
+		}
 	}))
 	defer guard.Close()
 	s.GuardURL = guard.URL

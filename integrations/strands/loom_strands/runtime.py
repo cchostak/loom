@@ -21,7 +21,7 @@ def invoke(role: str, handoff: Handoff, connection: Connection) -> Handoff:
     """Run an actual Strands loop; produce a handoff only after successful completion."""
     if role not in ROLES or handoff.depth >= 4:
         raise ValueError("Invalid role or handoff depth")
-    limits = Limits(connection.events, handoff.data)
+    limits = Limits(connection.events, handoff.data, connection)
     with client(connection) as mcp:
         discovered = mcp.list_tools_sync()
         permitted = {"researcher": {"filesystem_read_text_file", "filesystem_list_directory",

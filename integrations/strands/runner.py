@@ -81,13 +81,14 @@ def workflow(scenario="benign", *, lab=False):
               "delegation": ["planner", "researcher"], "escalation": ["planner"],
               "exfiltration": ["researcher", "publisher"], "arguments": ["researcher"],
               "runaway": ["operator"], "literal-injection": ["researcher", "planner"],
-              "tool-failure": ["researcher"]}
+              "tool-failure": ["researcher"],
+              "operator-denial": ["researcher", "planner", "operator"]}
     events = []
     for role in routes[scenario]:
         result = worker(role, handoff, lab=lab)
         events += result["events"]
         if not result["ok"]:
-            return {"ok": False, "scenario": scenario, "events": events}
+            return {"ok": False, "scenario": scenario, "events": events, "last_handoff": handoff}
         handoff = result["handoff"]
     return {"ok": True, "scenario": scenario, "events": events, "handoff": handoff}
 
@@ -106,7 +107,7 @@ def main():
     else:
         result = workflow(lab=False)
         # Prompts/results stay out of terminal logs; handoff details remain within runtime.
-        print(json.dumps({k: v for k, v in result.items() if k != "handoff"}, indent=2))
+        print(json.dumps({k: v for k, v in result.items() if k not in ("handoff", "last_handoff")}, indent=2))
         if not result["ok"]:
             raise SystemExit(1)
 

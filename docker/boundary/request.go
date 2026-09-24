@@ -27,7 +27,16 @@ type Completion struct {
 func Parse(r *http.Request, b []byte, id security.IdentityContext) (security.ActionRequest, []byte, int, error) {
 	a := security.ActionRequest{Identity: id, Data: security.DataContext{Source: "authenticated-ingress", Producer: id.Workload, Trust: "untrusted", Sensitivity: "unknown", Origin: "user", Tainted: true}, SideEffects: "read", Risk: "low"}
 	deny := errors.New("unsupported request")
-	if r.URL.RawQuery != "" || r.URL.RawPath != "" || r.Method != http.MethodPost {
+	if r.URL.RawQuery != "" || r.URL.RawPath != "" {
+		return a, nil, 0, deny
+	}
+	if r.URL.Path == "/mcp" && r.Method == http.MethodDelete && len(b) == 0 && r.Header.Get("Mcp-Session-Id") != "" {
+		a.Category, a.Tool, a.Method = "mcp", "protocol", "session/delete"
+		a.Resource, a.Destination = "/workspace", "filesystem"
+		a.Arguments, _ = json.Marshal(map[string]string{"session": r.Header.Get("Mcp-Session-Id")})
+		return a, nil, 0, nil
+	}
+	if r.Method != http.MethodPost {
 		return a, nil, 0, deny
 	}
 	if r.URL.Path == "/v1/chat/completions" {

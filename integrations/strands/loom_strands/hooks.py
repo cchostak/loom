@@ -10,8 +10,9 @@ from loom_strands.events import Events
 class Limits(HookProvider):
     """Bound a single invocation and conservatively taint every tool result."""
 
-    def __init__(self, events: Events, data: DataContext):
+    def __init__(self, events: Events, data: DataContext, connection=None):
         self.events, self.data = events, data
+        self.connection = connection
         self.turns = self.tools = 0
         self.started = time.monotonic()
 
@@ -36,10 +37,21 @@ class Limits(HookProvider):
         self.tools += 1
         if self.tools > 4:
             raise RuntimeError("Local tool limit")
+        if self.connection:
+            self.connection.tool_data = None
         self.events.emit("tool_requested", "agent", tool=event.tool_use["name"])
 
     def after_tool(self, event):
-        self.data = self.data.derived(self.events.role, "mcp:filesystem")
+        peer = self.connection.tool_data if self.connection else None
+        derived = self.data.derived(self.events.role, "mcp:filesystem")
+        if peer is not None:
+            derived = DataContext(**dict(derived.model_dump(),
+                sensitivity="sensitive" if "sensitive" in (peer.sensitivity, derived.sensitivity)
+                else "unknown",
+                parents=tuple(dict.fromkeys((*derived.parents, *peer.parents, peer.source)))))
+        self.data = derived
         # Tool failures are explicit outcomes; no raw error text enters events.
         status = "success" if event.result.get("status") == "success" else "error"
         self.events.emit("tool_result", "agent", status=status, tool=event.tool_use["name"])
+        if status == "error":
+            raise RuntimeError("Tool failed; workflow stopped")

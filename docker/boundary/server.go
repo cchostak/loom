@@ -65,19 +65,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Policy denied: "+d.Reason, 403)
 		return
 	}
-	release, err := s.Budgets.Acquire(id.Tenant+"/"+id.Session, len(body), tokens, time.Now())
-	if err != nil {
-		s.deny(w, a, trace, 429, "budget_exceeded")
-		return
+	// Closing an owned session releases resources and must remain possible when
+	// an execution budget is exhausted. Authentication, policy, ownership and
+	// audit still apply; cleanup cannot create sessions or invoke tools.
+	if r.Method != http.MethodDelete {
+		release, err := s.Budgets.Acquire(id.Tenant+"/"+id.Session, len(body), tokens, time.Now())
+		if err != nil {
+			s.deny(w, a, trace, 429, "budget_exceeded")
+			return
+		}
+		defer release()
 	}
-	defer release()
 	// Session identifiers returned by MCP are bound to the authenticated identity.
 	session := r.Header.Get("Mcp-Session-Id")
+	ownerKey := id.Tenant + "/" + id.Principal + "/" + id.Workload + "/" + id.Session
 	if session != "" {
 		s.mu.Lock()
 		owner, ok := s.sessions[session]
 		s.mu.Unlock()
-		if !ok || owner != id.Tenant+"/"+id.Session {
+		if !ok || owner != ownerKey {
 			s.deny(w, a, trace, 403, "session_denied")
 			return
 		}
@@ -100,7 +106,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.deny(w, a, trace, 503, "circuit_open")
 		return
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, r.Method, target, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "Upstream unavailable", 502)
 		return
@@ -136,7 +142,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status = 403
 		result = []byte(`{"error":"Output inspection denied"}`)
 	}
-	if next := response.Header.Get("Mcp-Session-Id"); next != "" && status < 400 {
+	if r.Method == http.MethodDelete && status < 400 {
+		s.mu.Lock()
+		delete(s.sessions, session)
+		s.mu.Unlock()
+	}
+	if next := response.Header.Get("Mcp-Session-Id"); next != "" && status < 400 && r.Method != http.MethodDelete {
 		s.mu.Lock()
 		if s.sessions == nil {
 			s.sessions = map[string]string{}
@@ -145,7 +156,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status = 503
 			result = []byte(`{"error":"Session capacity"}`)
 		} else {
-			s.sessions[next] = id.Tenant + "/" + id.Session
+			s.sessions[next] = ownerKey
 			w.Header().Set("Mcp-Session-Id", next)
 		}
 		s.mu.Unlock()

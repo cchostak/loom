@@ -104,7 +104,8 @@ def test_limits_and_events():
         limit.before_tool(SimpleNamespace(tool_use={"name": "request_capability"}))
     with pytest.raises(RuntimeError):
         limit.before_tool(SimpleNamespace(tool_use={"name": "request_capability"}))
-    limit.after_tool(SimpleNamespace(result={"status": "error", "secret": "DO_NOT_LOG"},
+    with pytest.raises(RuntimeError, match="workflow stopped"):
+        limit.after_tool(SimpleNamespace(result={"status": "error", "secret": "DO_NOT_LOG"},
                                          tool_use={"name": "request_capability"}))
     assert limit.data.source == "mcp:filesystem"
     assert "DO_NOT_LOG" not in json.dumps(e.records)
@@ -142,3 +143,31 @@ def test_fixed_model_and_routes():
         asyncio.run(conn.post("https://provider.invalid", {}))
     with pytest.raises(LoomFailure):
         LoomModel(conn).update_config(base_url="https://provider.invalid")
+
+
+def test_tool_provenance_merges_without_lowering_sensitivity():
+    event = SimpleNamespace(result={"status": "success"}, tool_use={"name": "read_text_file"})
+    conn = connection(lambda _: completion({"text": "ok"}))
+    conn.tool_data = DataContext(source="workspace", producer="loom-readonly-filesystem",
+                                 origin="tool", sensitivity="sensitive")
+    limits = Limits(conn.events, DataContext(source="external"), conn)
+    limits.after_tool(event)
+    assert limits.data.sensitivity == "sensitive"
+    assert "workspace" in limits.data.parents and "external" in limits.data.parents
+    conn.tool_data = DataContext(source="workspace", origin="tool")
+    limits.after_tool(event)
+    assert limits.data.sensitivity == "sensitive" and limits.data.tainted
+
+
+def test_opaque_metadata_is_not_model_content():
+    requests = []
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return completion({"text": "ok"})
+    conn = connection(handle)
+    async def run():
+        return [e async for e in LoomModel(conn).stream([
+            {"role": "user", "content": [{"text": "evidence"}]}])]
+    asyncio.run(run())
+    assert requests[0]["messages"][1]["content"] == "evidence"
+    assert "a" * 32 not in json.dumps(requests)

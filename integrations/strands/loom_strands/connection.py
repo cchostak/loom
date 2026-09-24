@@ -4,6 +4,7 @@ from pathlib import Path
 import httpx
 
 from loom_strands.events import Events
+from loom_strands.context import DataContext
 
 BASE_URL = "http://control-plane:8080"
 MODEL = "openai/gpt-4o-mini"
@@ -20,6 +21,7 @@ class Connection:
         if len(token) < 32 or any(c.isspace() for c in token):
             raise ValueError("Invalid Loom credential")
         self.token, self.events, self.transport = token, events, transport
+        self.tool_data: DataContext | None = None
 
     @classmethod
     def from_secret(cls, events: Events) -> "Connection":
@@ -27,11 +29,20 @@ class Connection:
         return cls(Path("/run/secrets/loom_token").read_text().strip(), events)
 
     async def post(self, path: str, payload: dict, session: str = "") -> httpx.Response:
-        """Bound requests/results and surface denial without interpreting it as approval."""
+        """Send a model or MCP proposal, never interpreting denial as approval."""
+        return await self._request("POST", path, payload, session)
+
+    async def close_session(self, session: str) -> None:
+        """Release only the authenticated workload's existing MCP session."""
+        if session:
+            await self._request("DELETE", "/mcp", None, session)
+
+    async def _request(self, method: str, path: str, payload: dict | None, session: str):
+        """Bound requests/results; never redirect or fall back."""
         if path not in ("/mcp", "/v1/chat/completions"):
             raise LoomFailure("Unsupported Loom route")
         import json
-        body = json.dumps(payload).encode()
+        body = json.dumps(payload).encode() if payload is not None else b""
         if len(body) > 65536:
             raise LoomFailure("Local input limit")
         category = "mcp" if path == "/mcp" else "model"
@@ -42,9 +53,9 @@ class Connection:
         if session:
             headers["Mcp-Session-Id"] = session
         try:
-            async with httpx.AsyncClient(timeout=35, trust_env=False, follow_redirects=False,
+            async with httpx.AsyncClient(timeout=5 if method == "DELETE" else 35, trust_env=False, follow_redirects=False,
                                          transport=self.transport) as client:
-                async with client.stream("POST", BASE_URL + path, content=body,
+                async with client.stream(method, BASE_URL + path, content=body,
                                          headers=headers) as response:
                     chunks = bytearray()
                     async for chunk in response.aiter_bytes():
