@@ -1,0 +1,27 @@
+# Test-only overrides. Use a separate project; never redirect the developer stack.
+services:
+  control-plane:
+    ports: !override ["127.0.0.1::8080"]
+  agentgateway:
+    environment: {OPENROUTER_API_KEY: ""}
+    volumes:
+      - ./.loom/strands-lab/gateway.yaml:/etc/agentgateway/config.yaml:ro
+      - ./.loom/strands-lab/workspace:/workspace:ro
+    networks: !override [mediation, fixture]
+    depends_on:
+      fixture-model: {condition: service_started}
+  jaeger:
+    ports: !override ["127.0.0.1::16686"]
+  fixture-model:
+    build: {context: ./integrations/strands, target: fixture}
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    dns: ["127.0.0.1"]
+    networks: [fixture]
+networks:
+  fixture: {internal: true}

@@ -1,0 +1,125 @@
+"""Assertions over real container execution, never a duplicate policy evaluator."""
+import json
+import time
+import urllib.request
+
+from runner import call, compose, workflow
+
+SCENARIOS = ("benign", "indirect", "escalation", "delegation", "exfiltration", "arguments", "runaway", "literal-injection", "tool-failure")
+
+
+def audit_records():
+    result = call(compose(True) + ["exec", "-T", "control-plane", "cat", "/audit/security.jsonl"],
+                  capture_output=True, text=True)
+    return [json.loads(line) for line in result.stdout.splitlines()]
+
+
+def no_bypass():
+    """Inspect actual container mounts and attempt TCP/DNS access as a compromised interpreter."""
+    config = json.loads(call(compose(True) + ["config", "--format", "json"],
+                             capture_output=True, text=True).stdout)
+    blocked = []
+    for service, port in [("agentgateway", 3000), ("agentgateway", 8080),
+                          ("guardrail-proxy", 9090), ("fixture-model", 8081),
+                          ("presidio-analyzer", 5002)]:
+        cid = call(compose(True) + ["ps", "-q", service], capture_output=True, text=True).stdout.strip()
+        info = json.loads(call(["docker", "inspect", cid], capture_output=True, text=True).stdout)[0]
+        blocked += [(v["IPAddress"], port) for v in info["NetworkSettings"]["Networks"].values()]
+    blocked += [("1.1.1.1", 443), ("169.254.169.254", 80)]
+    for role in ("researcher", "planner", "operator", "publisher"):
+        service = config["services"]["strands-" + role]
+        assert service["user"] == "65532:65532" and service["read_only"]
+        assert service["cap_drop"] == ["ALL"]
+        assert "no-new-privileges:true" in service["security_opt"]
+        assert list(service["networks"]) == ["agents"]
+        assert not service.get("volumes") and not service.get("ports")
+        assert service["secrets"] == [{"source": "strands-" + role, "target": "loom_token"}]
+    code = '''
+import os, socket, pathlib, urllib.request
+assert os.getuid() == 65532
+for p in ['/var/run/docker.sock', '/bin/sh', '/usr/bin/bash', '/usr/bin/pip', '/workspace']:
+    assert not pathlib.Path(p).exists(), p
+assert len(list(pathlib.Path('/run/secrets').iterdir())) == 1
+assert not any(k in os.environ for k in ['OPENAI_API_KEY','OPENROUTER_API_KEY','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','ANTHROPIC_API_KEY','HTTP_PROXY','HTTPS_PROXY'])
+for host, port in BLOCKED:
+    try:
+        connection = socket.create_connection((host, port), timeout=0.3)
+    except OSError:
+        continue
+    connection.close()
+    raise AssertionError('direct network bypass')
+try:
+    socket.getaddrinfo('example.com',443)
+except OSError:
+    pass
+else:
+    raise AssertionError('external DNS forwarding enabled')
+assert urllib.request.urlopen('http://control-plane:8080/health',timeout=5).status == 200
+print('network and process isolation passed')
+'''.replace("BLOCKED", repr(blocked))
+    call(compose(True) + ["run", "--rm", "--no-deps", "-T", "--entrypoint", "/usr/bin/python3",
+                          "strands-researcher", "-c", code])
+
+
+def assert_scenario(result):
+    events = result["events"]
+    model = [e for e in events if e["category"] == "model" and e["stage"] == "response"]
+    assert model and all(e["http_status"] == 200 for e in model), (result["scenario"], events)
+    scenario = result["scenario"]
+    if scenario == "benign":
+        assert result["ok"]
+        assert not any(e.get("status") == "rejected" for e in events)
+    elif scenario == "tool-failure":
+        assert any(e["stage"] == "tool_result" and e["status"] == "error" for e in events)
+    elif scenario == "runaway":
+        assert not result["ok"] and len(model) <= 6
+        assert sum(e["stage"] == "tool_requested" for e in events) <= 4
+    else:
+        expected = 400 if scenario in ("arguments", "exfiltration", "delegation") else 403
+        assert any(e["category"] == "mcp" and e.get("http_status") == expected
+                   for e in events), (scenario, events)
+    if result["ok"] and scenario in ("benign", "indirect", "delegation", "exfiltration"):
+        data = result["handoff"]["data"]
+        assert data["tainted"] and data["trust"] == "untrusted"
+        assert "mcp:filesystem" in data["parents"]
+        assert "agent:" + ("planner" if scenario == "delegation" else "researcher") in data["parents"]
+    assert all("content" not in e and "arguments" not in e for e in events)
+
+
+def correlate(results):
+    records = audit_records()
+    # Match opaque server-generated IDs, not a fabricated client authorization event.
+    wire = [e for r in results for e in r["events"] if e["stage"] == "response"]
+    for event in wire:
+        assert event.get("decision_id") and event.get("trace_id")
+        matched = [r for r in records if r.get("trace_id") == event["trace_id"]]
+        assert matched, event
+        assert any(r["workload"] == "strands-" + event["agent"] for r in matched)
+    # A successful MCP response is not necessarily a successful tool execution.
+    assert any(e["stage"] == "tool_result" and e["status"] == "success"
+               for r in results for e in r["events"])
+    port = call(compose(True) + ["port", "jaeger", "16686"],
+                capture_output=True, text=True).stdout.strip()
+    trace_id = next(e["trace_id"] for e in wire if e["category"] == "model")
+    for _ in range(15):
+        try:
+            with urllib.request.urlopen(f"http://{port}/api/traces/{trace_id}", timeout=3) as response:
+                data = json.load(response)
+                if data.get("data"):
+                    return
+        except OSError:
+            pass
+        time.sleep(1)
+    raise AssertionError("No matching Agentgateway trace in Jaeger")
+
+
+def run_lab():
+    no_bypass()
+    results = []
+    for scenario in SCENARIOS:
+        result = workflow(scenario, lab=True)
+        assert_scenario(result)
+        results.append(result)
+        print(json.dumps({"scenario": scenario, "passed": True, "events": result["events"]}))
+    correlate(results)
+    print(json.dumps({"passed": True, "scenarios": len(results), "audit_and_trace_correlated": True}))

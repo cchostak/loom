@@ -42,7 +42,7 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rawContent := inspectionText(bodyBytes)
-	if reason := inspectSensitive(r.Context(), rawContent); reason != "" {
+	if reason := inspectSensitive(r.Context(), string(bodyBytes)); reason != "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(ValidationResponse{Status: "blocked", Error: reason})
@@ -96,7 +96,7 @@ func guardrailWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rawContent := inspectionText(bodyBytes)
-	if reason := inspectSensitive(r.Context(), rawContent); reason != "" {
+	if reason := inspectSensitive(r.Context(), string(bodyBytes)); reason != "" {
 		_ = json.NewEncoder(w).Encode(GuardrailWebhookResponse{Action: GuardrailAction{Body: "Content inspection denied", StatusCode: 403, Reason: reason}})
 		return
 	}

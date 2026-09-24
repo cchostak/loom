@@ -1,6 +1,6 @@
 # Loom
 
-Loom is a local AI gateway and security control plane. It mediates model calls
+Loom is a local AI gateway and security control plane lab. It mediates model calls
 and a small read-only MCP filesystem through Agentgateway, with authenticated
 policy checks, content inspection, bounded execution and structured audit events.
 It is a production-oriented foundation, **not yet a shared production service**.
@@ -141,3 +141,12 @@ file stops accepting events at 100 MiB; maintain it with the control plane stopp
 
 Read the [threat model](docs/security-threat-model.md),
 [prioritized roadmap](docs/security-roadmap.md), and [security policy](SECURITY.md).
+
+## Strands reference agents
+
+Run `make strands-lab` for a keyless multi-agent lab using real Strands model and
+MCP calls through Loom. `make strands-test` checks the locked Python integration;
+`make strands` runs the optional real-model example with your configured provider
+key. Agents run in separate hardened containers with role-specific credentials.
+See the [Strands guide](integrations/strands/README.md) and
+[security design](docs/strands-integration.md) for the trust boundaries and limits.

@@ -233,3 +233,18 @@ func TestUpstreamFailureContainment(t *testing.T) {
 		})
 	}
 }
+
+func TestGuardTimeoutPreventsDispatch(t *testing.T) {
+	s, calls, _ := setup(t)
+	guard := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer guard.Close()
+	s.GuardURL = guard.URL
+	s.Client.Timeout = 20 * time.Millisecond
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(completion)))
+	if w.Code != 403 || calls.Load() != 0 {
+		t.Fatal("guard timeout dispatched", w.Code, calls.Load())
+	}
+}

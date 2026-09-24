@@ -32,7 +32,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
-    networks: [client-net, mediation]
+    networks: [client-net, mediation, agents]
 
   agentgateway:
     <<: *restricted
@@ -160,7 +160,68 @@ services:
       control-plane: {condition: service_healthy}
     networks: [client-net, inspection]
 
+  strands-researcher:
+    <<: *restricted
+    profiles: ["agents"]
+    build: {context: ./integrations/strands, target: runtime}
+    user: "65532:65532"
+    environment: ["LOOM_AGENT_ROLE=researcher"]
+    secrets:
+      - source: strands-researcher
+        target: loom_token
+    stdin_open: true
+    dns: ["127.0.0.1"]
+    depends_on:
+      control-plane: {condition: service_healthy}
+    networks: [agents]
+
+  strands-planner:
+    <<: *restricted
+    profiles: ["agents"]
+    build: {context: ./integrations/strands, target: runtime}
+    user: "65532:65532"
+    environment: ["LOOM_AGENT_ROLE=planner"]
+    secrets:
+      - source: strands-planner
+        target: loom_token
+    stdin_open: true
+    dns: ["127.0.0.1"]
+    depends_on:
+      control-plane: {condition: service_healthy}
+    networks: [agents]
+
+  strands-operator:
+    <<: *restricted
+    profiles: ["agents"]
+    build: {context: ./integrations/strands, target: runtime}
+    user: "65532:65532"
+    environment: ["LOOM_AGENT_ROLE=operator"]
+    secrets:
+      - source: strands-operator
+        target: loom_token
+    stdin_open: true
+    dns: ["127.0.0.1"]
+    depends_on:
+      control-plane: {condition: service_healthy}
+    networks: [agents]
+
+  strands-publisher:
+    <<: *restricted
+    profiles: ["agents"]
+    build: {context: ./integrations/strands, target: runtime}
+    user: "65532:65532"
+    environment: ["LOOM_AGENT_ROLE=publisher"]
+    secrets:
+      - source: strands-publisher
+        target: loom_token
+    stdin_open: true
+    dns: ["127.0.0.1"]
+    depends_on:
+      control-plane: {condition: service_healthy}
+    networks: [agents]
+
 networks:
+  agents: {internal: true}
   client-net: {}
   mediation: {internal: true}
   inspection: {internal: true}
@@ -171,3 +232,13 @@ volumes:
   pipeline-data: {}
   pipeline-models: {}
   security-audit: {}
+
+secrets:
+  strands-researcher:
+    file: ./.loom/strands/researcher.token
+  strands-planner:
+    file: ./.loom/strands/planner.token
+  strands-operator:
+    file: ./.loom/strands/operator.token
+  strands-publisher:
+    file: ./.loom/strands/publisher.token

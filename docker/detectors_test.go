@@ -94,3 +94,18 @@ func TestEncodedAndNestedInjection(t *testing.T) {
 		}
 	}
 }
+
+func TestInspectionTextStableOrdering(t *testing.T) {
+	body := []byte(`{"z":"last","a":{"y":"nested","b":"first"},"encoded":"{\"z\":\"two\",\"a\":\"one\"}"}`)
+	want := inspectionText(body)
+	for i := 0; i < 100; i++ {
+		if got := inspectionText(body); got != want {
+			t.Fatal("classifier input changed with map iteration")
+		}
+	}
+	for _, value := range []string{"last", "nested", "first", "one", "two"} {
+		if !strings.Contains(want, value) {
+			t.Fatalf("missing inspected value %q", value)
+		}
+	}
+}

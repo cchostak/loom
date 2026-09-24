@@ -1,0 +1,35 @@
+name: Strands security integration
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: strands-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  secured-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned packaging tool
+        run: python3 -m pip install uv==0.12.18
+      - name: Lock, static checks and unit regressions
+        run: make strands-test
+      - name: Build and exercise real enforcement without provider credentials
+        run: make strands-lab > strands-results.jsonl
+      - name: Upload content-free scenario evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: strands-security-evidence
+          path: strands-results.jsonl
+          retention-days: 7
+      - name: Stop isolated lab
+        if: always()
+        run: docker compose -p loom-strands-lab -f docker-compose.yml -f integrations/strands/compose.lab.yml --profile agents down -v --remove-orphans

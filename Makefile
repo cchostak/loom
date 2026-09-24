@@ -237,3 +237,15 @@ clean: down ## Stop containers and clean build artifacts; retain audit/data volu
 	@echo "==> Cleaning test artifacts; audit and data volumes are retained."
 	@rm -f docker/coverage.out docker/coverage.html docker/guardrail
 	@echo "$(GREEN)✓ Cleanup complete.$(NC)"
+
+.PHONY: strands strands-test strands-lab
+strands: init ## Run isolated Strands roles through Loom (requires provider API key)
+	uv run --locked --project integrations/strands python integrations/strands/runner.py demo
+
+strands-test: ## Validate the locked Strands package and run keyless unit tests
+	uv lock --check --project integrations/strands
+	uv run --locked --project integrations/strands ruff check integrations/strands scripts/bootstrap_strands.py
+	uv run --locked --project integrations/strands pytest -q integrations/strands/tests
+
+strands-lab: init ## Run real Strands, MCP and policy against an isolated keyless provider fixture
+	uv run --locked --project integrations/strands python integrations/strands/runner.py lab

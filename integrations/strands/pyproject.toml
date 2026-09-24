@@ -1,0 +1,14 @@
+[project]
+name = "loom-strands"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = ["strands-agents==1.57.0", "mcp==1.26.0", "httpx==0.28.1"]
+
+[dependency-groups]
+dev = ["pytest==8.4.2", "ruff==0.15.7"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

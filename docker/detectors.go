@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -19,13 +20,13 @@ type sensitiveDetector struct{}
 var secretPattern = regexp.MustCompile(`(?i)(-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:sk-or-v1-|sk-proj-|ghp_|github_pat_|AKIA)[A-Za-z0-9_-]{8,}|"(?:password|api_key|access_token|authorization)"\s*:\s*"[^"\s]+")`)
 
 func (sensitiveDetector) Detect(ctx context.Context, text string) (bool, error) {
-	if secretPattern.MatchString(text) {
+	if secretPattern.MatchString(inspectionText([]byte(text))) {
 		return true, nil
 	}
 	if piiScrubber == nil {
 		return false, errors.New("detector unavailable")
 	}
-	entities, err := piiScrubber.Analyze(ctx, text)
+	entities, err := piiScrubber.Analyze(ctx, piiInspectionText(text))
 	return len(entities) > 0, err
 }
 
@@ -63,7 +64,14 @@ func inspectionText(body []byte) string {
 				visit(item, depth+1)
 			}
 		case map[string]any:
-			for key, item := range v {
+			// Stable ordering makes external classifier input reproducible.
+			keys := make([]string, 0, len(v))
+			for key := range v {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				item := v[key]
 				out.WriteString(key)
 				out.WriteByte(' ')
 				visit(item, depth+1)
