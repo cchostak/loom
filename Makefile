@@ -2,7 +2,7 @@
 # Loom — Enterprise Cloud Development Platform & AI Security Gateway
 # ==============================================================================
 
-.PHONY: help init up down restart logs status trace clean check fmt test test-smoke scan doctor lab lab-json setup-isolation up-isolated pipeline pipeline-rag
+.PHONY: help init up down restart logs status trace clean check fmt test test-smoke scan doctor lab lab-json setup-isolation up-isolated pipeline pipeline-rag dex-init dex-up dex-down dex-token dex-clean
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -249,3 +249,43 @@ strands-test: ## Validate the locked Strands package and run keyless unit tests
 
 strands-lab: init ## Run real Strands, MCP and policy against an isolated keyless provider fixture
 	uv run --locked --project integrations/strands python integrations/strands/runner.py lab
+
+# ==============================================================================
+# Dex OIDC identity stage (Stage 1 security roadmap)
+# ==============================================================================
+
+dex-init: init ## Generate Dex client secrets and OIDC config (writes config/dex.yaml + config/oidc.json)
+	@echo "==> Generating Dex client credentials..."
+	@python3 scripts/bootstrap_dex.py
+	@echo "$(GREEN)✓ Dex secrets ready in .loom/dex/ and config/oidc.json$(NC)"
+
+dex-up: dex-init ## Build and start the full stack with Dex OIDC (overlay)
+	@echo "==> Starting Loom + Dex stack..."
+	docker compose -f docker-compose.yml -f docker-compose.dex.yml up -d --build --wait --wait-timeout 180
+	@echo ""
+	@echo "$(CYAN)Dex OIDC endpoint: http://127.0.0.1:$${LOOM_DEX_PORT:-5556}/dex$(NC)"
+	@$(MAKE) trace
+
+dex-down: ## Stop the Loom + Dex stack
+	@echo "==> Stopping Loom + Dex stack..."
+	docker compose -f docker-compose.yml -f docker-compose.dex.yml down
+
+dex-token: ## Fetch a test access token from Dex for the loom-ide workload (requires curl + jq)
+	@echo "==> Fetching test access token from Dex..."
+	@[ -f .loom/dex/loom-ide.secret ] || (echo "$(RED)Run 'make dex-init' first$(NC)" && exit 1)
+	@SECRET=$$(cat .loom/dex/loom-ide.secret); \
+	curl -sf \
+	  -d "grant_type=client_credentials" \
+	  -d "client_id=loom-ide" \
+	  --data-urlencode "client_secret=$${SECRET}" \
+	  -d "scope=model:invoke workspace:read" \
+	  http://127.0.0.1:$${LOOM_DEX_PORT:-5556}/dex/token \
+	| jq -r '.access_token'
+
+dex-clean: dex-down ## Remove Dex secrets and generated OIDC config (idempotent)
+	@echo "==> Cleaning Dex state..."
+	@rm -rf .loom/dex
+	@git checkout -- config/dex.yaml 2>/dev/null || true
+	@rm -f config/oidc.json
+	@docker volume rm loom_dex-data 2>/dev/null || true
+	@echo "$(GREEN)✓ Dex state cleared.$(NC)"

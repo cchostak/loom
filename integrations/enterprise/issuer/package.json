@@ -1,0 +1,1 @@
+{"name":"loom-lab-issuer","private":true,"type":"module","scripts":{"test":"node --test"},"dependencies":{"oidc-provider":"9.12.2"}}

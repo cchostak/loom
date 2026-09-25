@@ -55,3 +55,8 @@ __pycache__/
 .ruff_cache/
 
 /strands-report.json
+
+# Dex OIDC identity stage — generated files (bootstrap_dex.py writes these).
+# config/dex.yaml skeleton is tracked; the version with staticClients secrets must not be.
+# Use 'git checkout -- config/dex.yaml' to restore the skeleton after 'make dex-clean'.
+config/oidc.json

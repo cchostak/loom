@@ -19,10 +19,14 @@ type Server struct {
 	PolicyFile                 string
 	Audit                      *security.Audit
 	Budgets                    *security.Budgets
+	GlobalBudgets              security.BudgetLimiter
 	Client                     *http.Client
 	ModelURL, MCPURL, GuardURL string
 	mu                         sync.Mutex
 	sessions                   map[string]string
+	Dispatch                   func(security.ActionRequest, []byte, *http.Request) error
+	Metadata                   http.Handler
+	ResourceURL                string
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -30,11 +34,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		return
 	}
+	if s.Metadata != nil && strings.HasPrefix(r.URL.Path, "/.well-known/oauth-protected-resource") {
+		s.Metadata.ServeHTTP(w, r)
+		return
+	}
 	trace := security.NewID()
 	w.Header().Set("X-Loom-Trace-ID", trace)
 	id, err := s.Auth.Authenticate(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", "Bearer")
+		if s.Metadata != nil {
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+s.ResourceURL+`/.well-known/oauth-protected-resource"`)
+		}
 		s.deny(w, security.ActionRequest{}, trace, 401, "authentication_required")
 		return
 	}
@@ -69,7 +80,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// an execution budget is exhausted. Authentication, policy, ownership and
 	// audit still apply; cleanup cannot create sessions or invoke tools.
 	if r.Method != http.MethodDelete {
-		release, err := s.Budgets.Acquire(id.Tenant+"/"+id.Session, len(body), tokens, time.Now())
+		var limiter security.BudgetLimiter = s.Budgets
+		if s.GlobalBudgets != nil {
+			limiter = s.GlobalBudgets
+		}
+		release, err := limiter.Acquire(security.BudgetKey(id), len(body), tokens, time.Now())
 		if err != nil {
 			s.deny(w, a, trace, 429, "budget_exceeded")
 			return
@@ -119,6 +134,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req.Header.Set("Mcp-Session-Id", session)
 	}
 	req.Header.Set("MCP-Protocol-Version", "2025-03-26")
+	if s.Dispatch != nil {
+		if err := s.Dispatch(a, body, req); err != nil {
+			s.deny(w, a, trace, 503, "dispatch_unavailable")
+			return
+		}
+	}
 	response, err := s.Client.Do(req)
 	if err != nil {
 		circuit.Complete(false, time.Now())

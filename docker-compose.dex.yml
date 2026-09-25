@@ -1,0 +1,64 @@
+# Dex OIDC identity overlay for Loom — Stage 1 identity increment.
+#
+# Usage:
+#   make dex-init          # generate secrets and config
+#   make dex-up            # start full stack with Dex
+#   make dex-down          # stop full stack (Dex included)
+#   make dex-token         # fetch a test access token (requires curl + jq)
+#
+# The base docker-compose.yml is unchanged; this overlay:
+#   - Adds the `dex` service on the identity-net network.
+#   - Mounts config/dex.yaml (read-only) and a named volume for SQLite state.
+#   - Adds identity-net to control-plane so it can reach Dex for JWKS.
+#   - Injects LOOM_ENTERPRISE_CONFIG so the control plane loads oidc.json.
+#   - Publishes Dex port 5556 on loopback only (token fetch + health).
+#
+# Networks:
+#   identity-net  internal network between Dex and the control plane only.
+#   All other existing networks are unchanged.
+
+services:
+  dex:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.dex
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    user: "65532:65532"
+    ports:
+      - "127.0.0.1:${LOOM_DEX_PORT:-5556}:5556"
+    volumes:
+      - ./config/dex.yaml:/config/dex.yaml:ro
+      - dex-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5556/dex/healthz/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks: [identity-net]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  control-plane:
+    environment:
+      - LOOM_ENTERPRISE_CONFIG=/config/oidc.json
+    volumes:
+      - ./config/oidc.json:/config/oidc.json:ro
+    depends_on:
+      dex: {condition: service_healthy}
+    networks: [identity-net]
+
+networks:
+  identity-net:
+    internal: true
+
+volumes:
+  dex-data: {}

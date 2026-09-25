@@ -1,0 +1,154 @@
+x-service: &service
+  build: {context: ./docker, dockerfile: Dockerfile.enterprise}
+  user: '65532:65532'
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  pids_limit: 96
+  mem_limit: 384m
+  cpus: 1
+  tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
+  dns: ['127.0.0.1']
+
+services:
+  control-plane: &edge
+    environment: {LOOM_ENTERPRISE_CONFIG: /enterprise/edge.json}
+    ports: !override ['127.0.0.1:18080:8080']
+    volumes:
+      - ./.loom/enterprise/edge.json:/enterprise/edge.json:ro
+      - ./.loom/enterprise/policy.json:/config/policy.json:ro
+    secrets: [state-token, audit-token, dispatch-key]
+    dns: ['127.0.0.1']
+    networks: !override [client-net, mediation, agents, identity, authority, audit-edge]
+    depends_on:
+      issuer: {condition: service_started}
+      state: {condition: service_started}
+      audit: {condition: service_started}
+  control-plane-b:
+    <<: *edge
+    build: {context: ./docker, dockerfile: Dockerfile.control}
+    user: '65532:65532'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
+    ports: !override ['127.0.0.1:18081:8080']
+    volumes:
+      - ./config:/config:ro
+      - ./.loom/enterprise/edge.json:/enterprise/edge.json:ro
+      - ./.loom/enterprise/policy.json:/config/policy.json:ro
+      - enterprise-edge-b-audit:/audit
+  agentgateway:
+    environment: {OPENROUTER_API_KEY: ''}
+    volumes:
+      - ./.loom/enterprise/gateway.yaml:/etc/agentgateway/config.yaml:ro
+      - ./.loom/enterprise/workspace:/workspace:ro
+    dns: ['127.0.0.1']
+    networks: !override [mediation, provider-internal, gateway-quota]
+    depends_on:
+      connector: {condition: service_started}
+      state: {condition: service_started}
+  vscode:
+    dns: ['127.0.0.1']
+  issuer:
+    <<: *service
+    build: {context: ./integrations/enterprise/issuer}
+    volumes: ['./.loom/enterprise/issuer.json:/config/issuer.json:ro']
+    ports: ['127.0.0.1:18555:8080']
+    networks: [identity]
+  state:
+    <<: *service
+    environment:
+      LOOM_SERVICE_MODE: state
+      LOOM_DB: /data/state.db
+      LOOM_SIGNING_KEY_FILE: /run/secrets/dispatch-key
+      LOOM_SERVICE_TOKEN_FILE: /run/secrets/state-token
+      LOOM_AUDIT_URL: http://audit:8080
+      LOOM_AUDIT_TOKEN_FILE: /run/secrets/audit-token
+      LOOM_RATE_LIMIT: '60'
+    secrets: [dispatch-key, state-token, audit-token]
+    volumes: [enterprise-state:/data]
+    networks: [authority, gateway-quota, connector-state, audit-state]
+  audit:
+    <<: *service
+    environment:
+      LOOM_SERVICE_MODE: audit
+      LOOM_DB: /data/audit.db
+      LOOM_SIGNING_KEY_FILE: /run/secrets/audit-key
+      LOOM_SERVICE_TOKEN_FILE: /run/secrets/audit-token
+    secrets: [audit-key, audit-token]
+    volumes: [enterprise-audit:/data]
+    networks: [audit-edge, audit-state, audit-connector]
+  connector:
+    <<: *service
+    environment:
+      LOOM_SERVICE_MODE: connector
+      LOOM_DB: /data/connector.db
+      LOOM_SIGNING_KEY_FILE: /run/secrets/dispatch-key
+      LOOM_STATE_URL: http://state:8080
+      LOOM_STATE_TOKEN_FILE: /run/secrets/state-token
+      LOOM_AUDIT_URL: http://audit:8080
+      LOOM_AUDIT_TOKEN_FILE: /run/secrets/audit-token
+      LOOM_PROVIDER_URL: https://fixture-provider:8443/v1/chat/completions
+      LOOM_PROVIDER_KEY_FILE: /run/secrets/provider-key
+      LOOM_PROXY: http://squid:3128
+      LOOM_CA_FILE: /certs/fixture.crt
+    secrets: [dispatch-key, state-token, audit-token, provider-key]
+    volumes: [enterprise-connector:/data, './.loom/enterprise/fixture.crt:/certs/fixture.crt:ro']
+    networks: [provider-internal, connector-state, audit-connector, proxy-internal]
+    depends_on:
+      squid: {condition: service_started}
+      fixture-provider: {condition: service_started}
+  squid:
+    <<: *service
+    build: {context: ./integrations/enterprise/squid}
+    dns: !override []
+    volumes: ['./integrations/enterprise/squid/loom.conf:/etc/squid/loom.conf:ro']
+    networks: [proxy-internal, fixture-egress, provider-egress]
+  fixture-provider:
+    <<: *service
+    environment:
+      LOOM_SERVICE_MODE: fixture
+      LOOM_PROVIDER_KEY_FILE: /run/secrets/provider-key
+      LOOM_TLS_CERT: /certs/fixture.crt
+      LOOM_TLS_KEY: /run/secrets/fixture-key
+    secrets: [provider-key, fixture-key]
+    volumes: ['./.loom/enterprise/fixture.crt:/certs/fixture.crt:ro']
+    networks:
+      fixture-egress: {ipv4_address: 10.231.240.10}
+  jaeger:
+    ports: !override ['127.0.0.1:18686:16686']
+
+networks:
+  client-net: {internal: true}
+  observability-ui: {internal: true}
+  identity: {internal: true}
+  authority: {internal: true}
+  audit-edge: {internal: true}
+  audit-state: {internal: true}
+  audit-connector: {internal: true}
+  provider-internal: {internal: true}
+  gateway-quota: {internal: true}
+  connector-state: {internal: true}
+  proxy-internal: {internal: true}
+  fixture-egress:
+    internal: true
+    ipam:
+      config: [{subnet: 10.231.240.0/24}]
+
+volumes:
+  enterprise-state: {}
+  enterprise-audit: {}
+  enterprise-connector: {}
+  enterprise-edge-b-audit: {}
+
+secrets:
+  state-token: {file: ./.loom/enterprise/state-token}
+  audit-token: {file: ./.loom/enterprise/audit-token}
+  dispatch-key: {file: ./.loom/enterprise/dispatch-key}
+  audit-key: {file: ./.loom/enterprise/audit-key}
+  provider-key: {file: ./.loom/enterprise/provider-key}
+  fixture-key: {file: ./.loom/enterprise/fixture.key}

@@ -1,0 +1,8 @@
+FROM ghcr.io/dex-idp/dex:v2.43.1@sha256:6286d9a9b57dde0f0e1aeace39e96d3b0ad14f3c1efd4c56826ea7ac20e3bf04
+
+# Dex runs as nobody (uid 65532) in the upstream image.
+# We only need a writable /data directory for the SQLite state file.
+# The config is mounted read-only by the Compose overlay.
+USER 65532:65532
+EXPOSE 5556
+ENTRYPOINT ["/usr/local/bin/dex", "serve", "/config/dex.yaml"]

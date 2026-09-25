@@ -1,6 +1,9 @@
 package security
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -49,4 +52,16 @@ func (b *Budgets) Acquire(key string, size, tokens int, now time.Time) (func(), 
 	s.Active++
 	var once sync.Once
 	return func() { once.Do(func() { b.mu.Lock(); defer b.mu.Unlock(); s.Active-- }) }, nil
+}
+
+// BudgetLimiter permits a durable shared admission implementation.
+type BudgetLimiter interface {
+	Acquire(string, int, int, time.Time) (func(), error)
+}
+
+// BudgetKey binds admission to server-authenticated identity, not caller labels.
+func BudgetKey(id IdentityContext) string {
+	b, _ := json.Marshal([]string{id.Tenant, id.Principal, id.Workload, id.Session})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
