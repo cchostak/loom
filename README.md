@@ -67,7 +67,9 @@ flowchart LR
   Collector --> Jaeger
 ```
 
-For visual end-to-end flows covering both happy and unhappy paths across model mediation, MCP tools, SPIFFE/SPIRE identity, telemetry normalization, and swarm handoffs, see the [Sequence Diagrams](docs/sequence-diagrams.md).
+- **Visual Architecture**: See [Sequence Diagrams](docs/sequence-diagrams.md) for happy/unhappy execution flows.
+- **Threat & Tooling Matrix**: See [Problem & Mitigation Matrix](SECURITY_MATRIX.md) for threat-to-tool mapping.
+- **Enterprise Task Backlog**: See [Implementation Tasks](epics/tasks/1.md) for enterprise deployment tasks with Definitions of Done.
 
 Policy matches principal, workload, tenant, scope, method, tool/model, resource,
 destination, trust and sensitivity. The local registry assigns session identity;
@@ -88,45 +90,22 @@ Defaults per authenticated session: 60 requests/minute, 500 admitted operations,
 output tokens, 1 MiB response and a 30-second action timeout. These are local
 process limits, not durable cross-replica quotas or monetary cost accounting.
 
-## Policy and emergency operations
+## Running Lab Features
 
-Edit `config/policy.json` atomically in the mounted directory. Policy is reread
-for each request; malformed or missing policy denies. Increase `version` for each
-change. `emergency_deny: true` stops new dispatches. `disabled` accepts exact
-principal, workload, session, tool/model and destination identifiers. Removing a
-credential from `.loom/identity/credentials.json` revokes it on its next request.
-These controls do not cancel an operation already dispatched.
+Every architectural edge in Loom can be executed and verified via `make`:
 
-Restore a reviewed prior policy to roll back. Test changes before replacing the
-active file. There is no unauthenticated management API. To rotate local
-credentials, archive the current `.loom/` directory privately and run `make init`;
-restart the control plane to bind the new directory mount. Do not reset credentials
-merely to evade budgets.
-
-## Tests and optional features
-
-```bash
-python3 -m venv .loom/test-venv
-.loom/test-venv/bin/pip install httpx==0.27.2
-(cd docker && go test -v -race ./... && go vet ./...)
-.loom/test-venv/bin/python -m unittest discover -s tests -p 'test_*.py'
-make up
-./tests/smoke_test.sh
-make lab
-```
-
-Smoke tests use the actual authenticated ingress, Agentgateway and stdio MCP.
-They create and remove inert workspace fixtures. `make lab` is a separate
-simulation: its capability/delegation score does not prove runtime authorization.
-See [test evidence and limits](docs/security-implementation.md).
-
-`make pipeline` starts the optional local ingestion/RAG prototype. Failed checks
-leave documents unpromoted. Its HTTP API is local-only and lacks production
-identity, tenant isolation and persistent provenance enforcement. Do not ingest
-sensitive production data. Bronze stores the original submitted documents.
-
-`make up-isolated` uses the optional gVisor override after runtime installation.
-It does not remove the host workspace trust boundary. `make down` stops Loom.
+| Feature Area | Execution Command | Verification / Test |
+| :--- | :--- | :--- |
+| **Core AI Gateway** | `make up` | `make test-smoke` (Ingress, Presidio, Agentgateway) |
+| **Complete Test Suite** | `make test-all` | Runs Go unit/race + Python pytest + MCP + telemetry |
+| **MCP Schema & Tool Defense** | `make mcp-init` | `make mcp-test` (Signed contracts, prompt injection) |
+| **Zero-Trust SPIFFE Identity** | `make up-isolated` | `go test -v -run TestWorkload ./security` (SVIDs, mTLS) |
+| **Dex OIDC Federation** | `make dex-up` | `make dex-token` (PKCE & Client Credentials tokens) |
+| **Strands Multi-Agent Swarm** | `make strands-lab` | `make strands-test` (Role credentials, taint lineage) |
+| **Adversarial Swarm Lab** | `make lab` | `make lab-json` (Emits machine-readable score report) |
+| **Ingestion Pipeline & RAG** | `make pipeline` | `make pipeline-rag` (Medallion bronze/silver/gold + RAG) |
+| **Compliance Telemetry** | `make test-telemetry`| Validates OTel normalization to BlackShield schema |
+| **Environment & Tool Health**| `make doctor` | `make check` (Linter, compose config, go vet) |
 
 ## Production boundary
 

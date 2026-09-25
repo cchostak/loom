@@ -172,7 +172,6 @@ doctor: ## Validate prerequisite CLI tools, Docker daemon, network ports, and .e
 	@echo "================================================================"
 	@echo "             🩺 Loom System & Environment Doctor                "
 	@echo "================================================================"
-	@echo "1. Checking Required CLI Utilities:"
 	@for tool in docker git make curl go; do \
 		if command -v $$tool >/dev/null 2>&1; then \
 			echo -e "   $(GREEN)✓ $$tool$$(echo '                ' | cut -c 1-$$(expr 15 - $${#tool})) : $$(command -v $$tool)$(NC)"; \
@@ -180,75 +179,54 @@ doctor: ## Validate prerequisite CLI tools, Docker daemon, network ports, and .e
 			echo -e "   $(RED)✗ $$tool$$(echo '                ' | cut -c 1-$$(expr 15 - $${#tool})) : NOT FOUND$(NC)"; \
 		fi \
 	done
-	@echo ""
-	@echo "2. Checking Docker Daemon Status:"
-	@if docker info >/dev/null 2>&1; then \
-		echo -e "   $(GREEN)✓ Docker daemon is running and responsive.$(NC)"; \
-	else \
-		echo -e "   $(RED)✗ Docker daemon is unreachable. Please start Docker Engine.$(NC)"; \
-	fi
-	@echo ""
-	@echo "3. Checking Configuration Files:"
-	@if [ -f .env ]; then \
-		echo -e "   $(GREEN)✓ .env file exists.$(NC)"; \
-	else \
-		echo -e "   $(YELLOW)⚠ .env missing. Run 'make init' to create it.$(NC)"; \
-	fi
-	@if [ -f config/agentgateway-config.yaml ]; then \
-		echo -e "   $(GREEN)✓ config/agentgateway-config.yaml exists.$(NC)"; \
-	else \
-		echo -e "   $(RED)✗ config/agentgateway-config.yaml is missing.$(NC)"; \
-	fi
-	@if [ -f config/otel-collector-config.yaml ]; then \
-		echo -e "   $(GREEN)✓ config/otel-collector-config.yaml exists.$(NC)"; \
-	else \
-		echo -e "   $(RED)✗ config/otel-collector-config.yaml is missing.$(NC)"; \
-	fi
-	@echo ""
-	@echo "4. Checking Port Availability (8080, 8443, 16686, 3000):"
+	@if docker info >/dev/null 2>&1; then echo -e "   $(GREEN)✓ Docker daemon is running and responsive.$(NC)"; \
+	else echo -e "   $(RED)✗ Docker daemon is unreachable.$(NC)"; fi
+	@for cfg in .env config/agentgateway-config.yaml config/otel-collector-config.yaml; do \
+		if [ -f $$cfg ]; then echo -e "   $(GREEN)✓ $$cfg exists.$(NC)"; \
+		else echo -e "   $(YELLOW)⚠ $$cfg missing.$(NC)"; fi; \
+	done
 	@for port in 8080 8443 16686 3000; do \
-		if command -v nc > /dev/null 2>&1; then \
-			if nc -z 127.0.0.1 $$port > /dev/null 2>&1; then \
-				echo -e "   $(YELLOW)⚠ Port $$port is currently in use (possibly by running Loom stack).$(NC)"; \
-			else \
-				echo -e "   $(GREEN)✓ Port $$port is free.$(NC)"; \
-			fi \
+		if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 $$port >/dev/null 2>&1; then \
+			echo -e "   $(YELLOW)⚠ Port $$port in use (stack may be running).$(NC)"; \
 		fi \
 	done
-	@echo ""
-	@echo "5. Checking Container Isolation Runtimes:"
 	@RUNTIMES=$$(docker info --format '{{range $$k, $$v := .Runtimes}}{{$$k}} {{end}}' 2>/dev/null || echo ''); \
-	for rt in runsc runsc-kvm; do \
-		if echo "$$RUNTIMES" | grep -q "$$rt"; then \
-			echo -e "   $(GREEN)✓ $$rt$$(echo '                ' | cut -c 1-$$(expr 16 - $${#rt})) : registered (gVisor)$(NC)"; \
-		else \
-			echo -e "   $(YELLOW)⚠ $$rt$$(echo '                ' | cut -c 1-$$(expr 16 - $${#rt})) : not installed — run 'make setup-isolation'$(NC)"; \
-		fi; \
-	done; \
-	if echo "$$RUNTIMES" | grep -q 'kata'; then \
-		echo -e "   $(GREEN)✓ kata           : registered (Kata Containers)$(NC)"; \
-	else \
-		echo -e "   $(YELLOW)⚠ kata           : not installed (optional — run 'make setup-isolation --with-kata')$(NC)"; \
-	fi
+	for rt in runsc kata; do \
+		if echo "$$RUNTIMES" | grep -q "$$rt"; then echo -e "   $(GREEN)✓ $$rt runtime registered$(NC)"; \
+		else echo -e "   $(YELLOW)⚠ $$rt runtime not installed (optional, run 'make setup-isolation')$(NC)"; fi; \
+	done
 	@echo "================================================================"
-	@echo -e "$(BOLD)$(GREEN)✓ Doctor diagnostic check finished.$(NC)"
 
 clean: down ## Stop containers and clean build artifacts; retain audit/data volumes
 	@echo "==> Cleaning test artifacts; audit and data volumes are retained."
 	@rm -f docker/coverage.out docker/coverage.html docker/guardrail
 	@echo "$(GREEN)✓ Cleanup complete.$(NC)"
 
-.PHONY: strands strands-test strands-lab
+UV ?= $(shell command -v uv 2>/dev/null || ( [ -x $(CURDIR)/.loom/tooling/bin/uv ] && echo $(CURDIR)/.loom/tooling/bin/uv ) || echo uv)
+
+.PHONY: strands strands-test strands-lab mcp-init mcp-test test-telemetry test-all
+mcp-init: ## Bootstrap MCP tool contract schemas and Ed25519 signing keys
+	@python3 scripts/bootstrap_mcp.py
+
+mcp-test: ## Run strict MCP schema validation and tool poisoning test suite
+	$(UV) run --locked --project integrations/strands pytest -q integrations/strands/tests/test_mcp*.py
+
+test-telemetry: ## Verify guardrail event normalization to BlackShield finding schema
+	@cd docker && go test -v -race -run 'Telemetry' ./enterprise
+
+test-all: test strands-test mcp-test test-telemetry ## Run complete test suite across Go and Python
+	@echo -e "$(BOLD)$(GREEN)✓ All Loom Go and Python test suites passed.$(NC)"
+
 strands: init ## Run isolated Strands roles through Loom (requires provider API key)
-	uv run --locked --project integrations/strands python integrations/strands/runner.py demo
+	$(UV) run --locked --project integrations/strands python integrations/strands/runner.py demo
 
 strands-test: ## Validate the locked Strands package and run keyless unit tests
-	uv lock --check --project integrations/strands
-	uv run --locked --project integrations/strands ruff check integrations/strands scripts/bootstrap_strands.py
-	uv run --locked --project integrations/strands pytest -q integrations/strands/tests
+	$(UV) lock --check --project integrations/strands
+	$(UV) run --locked --project integrations/strands ruff check integrations/strands scripts/bootstrap_strands.py
+	$(UV) run --locked --project integrations/strands pytest -q integrations/strands/tests
 
 strands-lab: init ## Run real Strands, MCP and policy against an isolated keyless provider fixture
-	uv run --locked --project integrations/strands python integrations/strands/runner.py lab
+	$(UV) run --locked --project integrations/strands python integrations/strands/runner.py lab
 
 # ==============================================================================
 # Dex OIDC identity stage (Stage 1 security roadmap)

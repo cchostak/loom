@@ -1,8 +1,8 @@
 package main
 
 import (
+	"net"
 	"net/http"
- "net"
 	"os"
 	"syscall"
 	"time"
@@ -42,4 +42,11 @@ func healthy(url string) bool {
 }
 
 // listening checks process listeners without spending an authenticated quota.
-func listening(address string)bool { c,err:=net.DialTimeout("tcp",address,2*time.Second);if err!=nil{return false};c.Close();return true }
+func listening(address string) bool {
+	c, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}

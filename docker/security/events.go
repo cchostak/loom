@@ -22,7 +22,7 @@ type EventSink interface{ Emit(ControlEvent) }
 // OTLPEvents is a bounded asynchronous OTLP/HTTP log exporter. Enforcement never
 // waits for telemetry. Durable authoritative audit is a separate control.
 type OTLPEvents struct {
- token string
+	token    string
 	endpoint string
 	client   *http.Client
 	queue    chan ControlEvent
@@ -64,7 +64,9 @@ func (e *OTLPEvents) run(ctx context.Context) {
 					break
 				}
 				req.Header.Set("Content-Type", "application/json")
- if e.token!="" {req.Header.Set("Authorization","Bearer "+e.token)}
+				if e.token != "" {
+					req.Header.Set("Authorization", "Bearer "+e.token)
+				}
 				res, err := e.client.Do(req)
 				if err == nil {
 					res.Body.Close()
