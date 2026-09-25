@@ -15,6 +15,10 @@ x-restricted: &restricted
 services:
   control-plane:
     <<: *restricted
+    environment:
+      LOOM_MCP_SIGNING_KEY: /identity/mcp-key.pem
+      LOOM_OTLP_LOGS_ENDPOINT: http://otel-collector:4319/v1/logs
+      LOOM_OTLP_TOKEN_FILE: /identity/otel-control-token
     build: {context: ./docker, dockerfile: Dockerfile.control}
     restart: unless-stopped
     ports:
@@ -84,13 +88,28 @@ services:
     restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yaml", "--feature-gates=ottl.set.allowNil"]
     volumes: ["./config/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro"]
-    depends_on: [jaeger]
+    secrets: [otel-control-token, normalizer-ingest]
+    depends_on: [jaeger, normalizer]
     healthcheck:
       test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
       interval: 5s
       timeout: 5s
       retries: 6
     networks: [mediation, telemetry]
+
+  normalizer:
+    <<: *restricted
+    build: {context: ./docker, dockerfile: Dockerfile.enterprise}
+    user: "65532:65532"
+    environment:
+      LOOM_SERVICE_MODE: normalizer
+      LOOM_DB: /data/normalization.db
+      LOOM_SIGNING_KEY_FILE: /run/secrets/normalizer-key
+      LOOM_SERVICE_TOKEN_FILE: /run/secrets/normalizer-ingest
+      LOOM_READ_TOKEN_FILE: /run/secrets/normalizer-read
+    secrets: [normalizer-ingest, normalizer-read, normalizer-key]
+    volumes: [normalization-queue:/data]
+    networks: [telemetry]
 
   guardrail-proxy:
     <<: *restricted
@@ -169,6 +188,9 @@ services:
     secrets:
       - source: strands-researcher
         target: loom_token
+    configs:
+      - source: mcp-public-key
+        target: /etc/loom/mcp-public.pem
     stdin_open: true
     dns: ["127.0.0.1"]
     depends_on:
@@ -184,6 +206,9 @@ services:
     secrets:
       - source: strands-planner
         target: loom_token
+    configs:
+      - source: mcp-public-key
+        target: /etc/loom/mcp-public.pem
     stdin_open: true
     dns: ["127.0.0.1"]
     depends_on:
@@ -199,6 +224,9 @@ services:
     secrets:
       - source: strands-operator
         target: loom_token
+    configs:
+      - source: mcp-public-key
+        target: /etc/loom/mcp-public.pem
     stdin_open: true
     dns: ["127.0.0.1"]
     depends_on:
@@ -214,6 +242,9 @@ services:
     secrets:
       - source: strands-publisher
         target: loom_token
+    configs:
+      - source: mcp-public-key
+        target: /etc/loom/mcp-public.pem
     stdin_open: true
     dns: ["127.0.0.1"]
     depends_on:
@@ -232,8 +263,13 @@ volumes:
   pipeline-data: {}
   pipeline-models: {}
   security-audit: {}
+  normalization-queue: {}
 
 secrets:
+  otel-control-token: {file: ./.loom/identity/otel-control-token}
+  normalizer-ingest: {file: ./.loom/identity/normalizer-ingest}
+  normalizer-read: {file: ./.loom/identity/normalizer-read}
+  normalizer-key: {file: ./.loom/identity/normalizer-key}
   strands-researcher:
     file: ./.loom/strands/researcher.token
   strands-planner:
@@ -242,3 +278,7 @@ secrets:
     file: ./.loom/strands/operator.token
   strands-publisher:
     file: ./.loom/strands/publisher.token
+
+configs:
+  mcp-public-key:
+    file: ./.loom/identity/mcp-public.pem

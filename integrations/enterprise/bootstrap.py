@@ -61,7 +61,7 @@ def provision():
     users = []
     for user in ('alice', 'bob'):
         password, salt = secrets.token_urlsafe(24), secrets.token_hex(16)
-        users.append(dict(id=user, salt=salt, hash=hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1).hex()))
+        users.append(dict(id=user, salt=salt, hash=hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1, dklen=32).hex()))
         credentials[user] = dict(password=password)
         grant = scopes if user == 'alice' else 'operator:approve document:read'
         bindings.append(dict(subject=user, client_id='loom-browser', identity=dict(principal=user,

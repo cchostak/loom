@@ -29,6 +29,7 @@ func Open(path string, key []byte) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
+ CREATE TABLE IF NOT EXISTS normalization_queue (id TEXT PRIMARY KEY, tenant TEXT, finding TEXT);
  CREATE TABLE IF NOT EXISTS budgets (key TEXT PRIMARY KEY, started INTEGER, calls INTEGER, tokens INTEGER);
  CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, key TEXT, expires INTEGER);
  CREATE TABLE IF NOT EXISTS rates (key TEXT PRIMARY KEY, window INTEGER, count INTEGER);

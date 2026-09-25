@@ -9,7 +9,7 @@ from loom_strands.events import Events
 from loom_strands.mcp import client
 
 
-def test_mcp_client_uses_authenticated_post_and_bound_session():
+def test_mcp_client_uses_authenticated_post_and_bound_session(mcp_signer):
     seen = []
 
     def handle(request):
@@ -25,8 +25,8 @@ def test_mcp_client_uses_authenticated_post_and_bound_session():
                   "serverInfo": {"name": "fixture", "version": "1"}}
         if method == "tools/list":
             result = {"tools": []}
-        return httpx.Response(200, json={"jsonrpc": "2.0", "id": data["id"], "result": result},
-                              headers={"Mcp-Session-Id": "bound-session"})
+        return mcp_signer(httpx.Response(200, json={"jsonrpc": "2.0", "id": data["id"], "result": result},
+                              headers={"Mcp-Session-Id": "bound-session"}), request)
 
     conn = Connection("x" * 48, Events("planner", "a" * 32, "user"), httpx.MockTransport(handle))
     with client(conn) as mcp:

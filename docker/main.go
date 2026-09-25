@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"guardrail-proxy/pii"
+	"guardrail-proxy/security"
+	"net"
 )
 
 // WebhookPayload supports both direct {role, content, prompt} and messages array formats
@@ -101,6 +103,19 @@ func SetupRouter() http.Handler {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--health" {
+		c, e := net.DialTimeout("tcp", "127.0.0.1:9090", time.Second)
+		if e != nil {
+			os.Exit(1)
+		}
+		c.Close()
+		return
+	}
+	workload, err := security.WorkloadFromEnvironment()
+	if err != nil {
+		log.Fatal("Workload identity unavailable")
+	}
+
 	// Initialise PII scrubber from environment.
 	presidioURL := os.Getenv("PII_PRESIDIO_URL")
 	if presidioURL == "" {
@@ -121,6 +136,9 @@ func main() {
 	}
 
 	handler := SetupRouter()
+	if workload != nil {
+		handler = security.SVIDMiddleware(workload, handler)
+	}
 	server := &http.Server{
 		Addr:         ":" + port,
 		Handler:      handler,
@@ -136,7 +154,7 @@ func main() {
 	go func() {
 		log.Printf("🛡️ Guardrail Proxy starting on port %s...", port)
 		log.Printf("🛡️ Enforcing %d forbidden pattern rules.", len(ForbiddenPatterns))
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := security.ServeWorkload(server, workload); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server failed to start: %v", err)
 		}
 	}()

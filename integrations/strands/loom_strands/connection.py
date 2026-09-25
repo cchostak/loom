@@ -63,7 +63,7 @@ class Connection:
                         if len(chunks) > 1 << 20:
                             raise LoomFailure("Local output limit")
                     result = httpx.Response(response.status_code, headers=response.headers,
-                                            content=bytes(chunks))
+                                            content=bytes(chunks), request=httpx.Request(method, BASE_URL + path, content=body, headers=headers))
         except httpx.HTTPError:
             self.events.emit("failed", category, status="unavailable")
             raise LoomFailure("Loom unavailable") from None

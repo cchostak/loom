@@ -4,6 +4,18 @@ receivers:
       grpc: {endpoint: "0.0.0.0:4317"}
       http: {endpoint: "0.0.0.0:4318"}
 
+  otlp/security:
+    protocols:
+      http:
+        endpoint: "0.0.0.0:4319"
+        auth: {authenticator: bearertokenauth/security}
+
+extensions:
+  bearertokenauth/security:
+    filename: /run/secrets/otel-control-token
+  bearertokenauth/normalizer:
+    filename: /run/secrets/normalizer-ingest
+
 processors:
   memory_limiter:
     check_interval: 1s
@@ -32,18 +44,47 @@ processors:
         statements:
           - set(name, "loom.event")
           - keep_keys(attributes, [])
+  transform/governance:
+    error_mode: propagate
+    log_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, [])
+          - set(attributes["service.name"], "loom")
+      - context: scope
+        statements:
+          - set(name, "loom.security")
+          - set(version, "1")
+          - keep_keys(attributes, [])
+      - context: log
+        statements:
+          - keep_keys(attributes, ["loom.event_id", "loom.kind", "loom.reason", "loom.resource", "loom.tenant", "loom.workload", "loom.trace_id", "loom.decision_id"])
+          - set(body, "loom.security.control")
   batch: {timeout: 1s, send_batch_size: 256}
+  batch/governance: {timeout: 1s, send_batch_size: 64, send_batch_max_size: 256}
 
 exporters:
   otlp_grpc:
     endpoint: jaeger:4317
     tls: {insecure: true}
 
+  otlp_http/normalizer:
+    endpoint: http://normalizer:8080
+    encoding: json
+    auth: {authenticator: bearertokenauth/normalizer}
+    sending_queue: {enabled: true, queue_size: 1024}
+    retry_on_failure: {enabled: true, initial_interval: 1s, max_interval: 10s, max_elapsed_time: 0s}
+
 service:
+  extensions: [bearertokenauth/security, bearertokenauth/normalizer]
   pipelines:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, transform/privacy, batch]
       exporters: [otlp_grpc]
+    logs/security:
+      receivers: [otlp/security]
+      processors: [memory_limiter, transform/governance, batch/governance]
+      exporters: [otlp_http/normalizer]
   telemetry:
     logs: {level: warn}

@@ -5,6 +5,8 @@ planned controls are not production assurances.
 
 ## Architecture and sequence
 
+Visual sequence diagrams detailing happy and unhappy execution paths for all boundaries are documented in [sequence-diagrams.md](sequence-diagrams.md).
+
 1. Add a standards-based local issuer using pinned `oidc-provider`, real PKCE login
    and client credentials. Loom validates JWT access tokens against pinned issuer,
    audience, algorithm and JWKS; identity mappings remain server-owned. Publish

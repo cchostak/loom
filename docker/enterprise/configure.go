@@ -37,6 +37,10 @@ func secret(path string) ([]byte, error) {
 // covers the Stage 1 identity increment without requiring full enterprise
 // remote services.
 func Configure(s *boundary.Server, path string) (http.Handler, error) {
+	return ConfigureWithWorkload(s, path, nil)
+}
+
+func ConfigureWithWorkload(s *boundary.Server, path string, workload *security.Workload) (http.Handler, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -68,8 +72,11 @@ func Configure(s *boundary.Server, path string) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	state := Remote{URL: c.StateURL, Token: string(stateToken)}
+	state := Remote{URL: c.StateURL, Token: string(stateToken), Events: s.Budgets.Events}
 	s.Auth = ActiveAuth{Auth: &c.OIDC, State: state}
+	if workload != nil {
+		s.Auth = security.WorkloadAuth{Auth: s.Auth, Bindings: workload.Config.IdentityBindings}
+	}
 	s.GlobalBudgets = state
 	s.Audit = &security.Audit{Writer: AuditWriter{Remote{URL: c.AuditURL, Token: string(auditToken)}}}
 	s.ResourceURL = c.Resource

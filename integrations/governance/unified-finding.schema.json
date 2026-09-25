@@ -1,0 +1,745 @@
+{
+  "$defs": {
+    "AffectedResource": {
+      "properties": {
+        "resource_type": {
+          "description": "e.g. 'container_image', 'ec2_instance', 'source_file', 'package'",
+          "title": "Resource Type",
+          "type": "string"
+        },
+        "resource_id": {
+          "description": "Image digest, ARN, file path, package name",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Name"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        },
+        "account_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Id"
+        },
+        "cloud_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cloud Provider"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Namespace"
+        },
+        "primary_ip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Ip"
+        },
+        "ip_addresses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ip Addresses",
+          "type": "array"
+        },
+        "os_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os Name"
+        },
+        "os_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os Version"
+        },
+        "kernel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kernel"
+        },
+        "architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Architecture"
+        },
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "host_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host Count"
+        }
+      },
+      "required": [
+        "resource_type",
+        "resource_id"
+      ],
+      "title": "AffectedResource",
+      "type": "object"
+    },
+    "FindingStatus": {
+      "enum": [
+        "new",
+        "in_progress",
+        "resolved",
+        "suppressed",
+        "reopened"
+      ],
+      "title": "FindingStatus",
+      "type": "string"
+    },
+    "FindingType": {
+      "enum": [
+        "vulnerability",
+        "misconfiguration",
+        "sast",
+        "sbom",
+        "host_ids",
+        "secret",
+        "license",
+        "external_exposure",
+        "oauth_grant",
+        "ai_asset",
+        "registry_image",
+        "signature_invalid",
+        "signature_missing",
+        "attestation_missing",
+        "sbom_mismatch",
+        "slsa_insufficient",
+        "supply_chain_integrity",
+        "runtime_threat",
+        "behavioral_anomaly",
+        "execution_chain",
+        "policy_violation",
+        "web_app",
+        "threat_intel_exposure",
+        "posture_drift"
+      ],
+      "title": "FindingType",
+      "type": "string"
+    },
+    "Remediation": {
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "fixed_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Version"
+        },
+        "references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "References",
+          "type": "array"
+        },
+        "automated": {
+          "default": false,
+          "title": "Automated",
+          "type": "boolean"
+        }
+      },
+      "title": "Remediation",
+      "type": "object"
+    },
+    "SBOMComponent": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "purl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Purl"
+        },
+        "cpe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpe"
+        },
+        "supplier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Supplier"
+        },
+        "license_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Id"
+        },
+        "license_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Name"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "SBOMComponent",
+      "type": "object"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info",
+        "unknown"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "SourceMeta": {
+      "description": "Preserves the original scanner-specific data for audit trail.",
+      "properties": {
+        "scanner": {
+          "description": "e.g. 'trivy', 'semgrep', 'prowler', 'syft', 'ossec', 'lynis'",
+          "title": "Scanner",
+          "type": "string"
+        },
+        "scanner_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scanner Version"
+        },
+        "raw_severity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Severity"
+        },
+        "raw_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Id"
+        },
+        "scan_started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scan Started At"
+        },
+        "scan_finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scan Finished At"
+        },
+        "extra": {
+          "additionalProperties": true,
+          "title": "Extra",
+          "type": "object"
+        }
+      },
+      "required": [
+        "scanner"
+      ],
+      "title": "SourceMeta",
+      "type": "object"
+    }
+  },
+  "description": "Source-agnostic normalized security finding.\n\nThis is the canonical format persisted in the backend. All ingestion\nclients must normalise their scanner output into this shape before\nsubmitting to the ingestion API.",
+  "example": {
+    "affected_resource": {
+      "resource_id": "sha256:abc123",
+      "resource_name": "myapp:latest",
+      "resource_type": "container_image"
+    },
+    "cve_id": "CVE-2024-1234",
+    "dedup_key": "vuln:CVE-2024-1234:sha256:abc123",
+    "environment": "ci",
+    "finding_type": "vulnerability",
+    "repository": "acme/myapp",
+    "severity": "critical",
+    "source": {
+      "scanner": "trivy",
+      "scanner_version": "0.50.0"
+    },
+    "title": "CVE-2024-1234 in openssl 3.0.8"
+  },
+  "properties": {
+    "finding_type": {
+      "$ref": "#/$defs/FindingType"
+    },
+    "title": {
+      "maxLength": 512,
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "cve_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CVE-2024-XXXXX when applicable",
+      "title": "Cve Id"
+    },
+    "cwe_ids": {
+      "description": "CWE-79 etc.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Cwe Ids",
+      "type": "array"
+    },
+    "rule_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Scanner rule e.g. semgrep rule id, Prowler check id",
+      "title": "Rule Id"
+    },
+    "affected_resource": {
+      "$ref": "#/$defs/AffectedResource"
+    },
+    "repository": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Git repo slug or URL",
+      "title": "Repository"
+    },
+    "branch": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Branch"
+    },
+    "commit_sha": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Commit Sha"
+    },
+    "environment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "dev, staging, prod, ci",
+      "title": "Environment"
+    },
+    "service_name": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Tenant service catalog name or alias",
+      "title": "Service Name"
+    },
+    "file_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "File Path"
+    },
+    "line_start": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Line Start"
+    },
+    "line_end": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Line End"
+    },
+    "sbom_component": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SBOMComponent"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "cvss_v3_score": {
+      "anyOf": [
+        {
+          "maximum": 10,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CVSS v3.x base score",
+      "title": "Cvss V3 Score"
+    },
+    "cvss_v3_vector": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CVSS v3.x vector string",
+      "title": "Cvss V3 Vector"
+    },
+    "published_date": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CVE publication date",
+      "title": "Published Date"
+    },
+    "epss_score": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "EPSS exploit probability",
+      "title": "Epss Score"
+    },
+    "epss_percentile": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "EPSS percentile rank",
+      "title": "Epss Percentile"
+    },
+    "compliance_frameworks": {
+      "description": "Compliance framework references (e.g. 'CIS 1.4', 'PCI-DSS 2.2')",
+      "items": {
+        "type": "string"
+      },
+      "title": "Compliance Frameworks",
+      "type": "array"
+    },
+    "remediation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Remediation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "status": {
+      "$ref": "#/$defs/FindingStatus",
+      "default": "new"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceMeta"
+    },
+    "first_seen": {
+      "format": "date-time",
+      "title": "First Seen",
+      "type": "string"
+    },
+    "last_seen": {
+      "format": "date-time",
+      "title": "Last Seen",
+      "type": "string"
+    },
+    "dedup_key": {
+      "description": "Deterministic hash combining finding_type + rule/cve + resource_id + file_path + line. Used for upsert deduplication.",
+      "title": "Dedup Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "finding_type",
+    "title",
+    "severity",
+    "affected_resource",
+    "source",
+    "dedup_key"
+  ],
+  "title": "UnifiedFinding",
+  "type": "object"
+}

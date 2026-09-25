@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+from bootstrap_mcp import provision
 
 
 def bootstrap(root: Path) -> None:
@@ -14,6 +15,7 @@ def bootstrap(root: Path) -> None:
     identity = base / "identity"
     identity.mkdir(parents=True, exist_ok=True)
     base.chmod(0o700)
+    provision(identity)
     token_path = base / "client.token"
     registry = identity / "credentials.json"
     if token_path.exists() or registry.exists():

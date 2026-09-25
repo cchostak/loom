@@ -1,51 +1,4 @@
-# ==============================================================================
-# Loom — Container Isolation & SPIFFE/SPIRE Zero-Trust Workload Identity Override
-# ==============================================================================
-# Applies gVisor (runsc) runtime and SPIFFE/SPIRE cryptographic workload identity
-# to security-sensitive services, replacing network perimeter isolation with
-# mutual TLS and short-lived SVID verification.
-#
-# Usage (via Makefile):
-#   make up-isolated
-#
-# Manual usage:
-#   docker compose -f docker-compose.yml -f docker-compose.isolation.yml up -d --build --wait
-# ==============================================================================
-
 services:
-  control-plane:
-    runtime: runsc
-    environment:
-      LOOM_WORKLOAD_CONFIG: /config/workload-control-plane.json
-    volumes:
-      - spire-workload-socket:/run/spire:ro
-      - ./config/spire/workload-control-plane.json:/config/workload-control-plane.json:ro
-    networks:
-      - workload-identity
-
-  guardrail-proxy:
-    runtime: runsc
-    environment:
-      LOOM_WORKLOAD_CONFIG: /config/workload-guardrail.json
-    volumes:
-      - spire-workload-socket:/run/spire:ro
-      - ./config/spire/workload-guardrail.json:/config/workload-guardrail.json:ro
-    networks:
-      - workload-identity
-
-  presidio-analyzer:
-    runtime: runsc
-
-  agentgateway:
-    runtime: runsc
-    volumes:
-      - spire-workload-socket:/run/spire:ro
-    networks:
-      - workload-identity
-
-  # ----------------------------------------------------------------------------
-  # SPIFFE/SPIRE Workload Identity Infrastructure
-  # ----------------------------------------------------------------------------
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.3@sha256:4082f30d3e0ddc4000a171392c4ea174345ee44d161ee917c70b97b2ecfba141
     command: ['-config', '/config/server.conf']
@@ -60,7 +13,6 @@ services:
       - spire-server-data:/data
     tmpfs: ['/run/spire-server:rw,noexec,nosuid,size=8m', '/tmp:rw,noexec,nosuid,size=16m']
     networks: [workload-identity]
-
   docker-metadata:
     build: {context: ./docker, dockerfile: Dockerfile.workload}
     entrypoint: ['/app/docker-metadata']
@@ -70,12 +22,11 @@ services:
     security_opt: ['no-new-privileges:true']
     pids_limit: 32
     mem_limit: 64m
-    environment: {LOOM_COMPOSE_PROJECT: loom}
+    environment: {LOOM_COMPOSE_PROJECT: loom-enterprise}
     network_mode: none
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - docker-metadata-socket:/relay
-
   spire-agent:
     image: ghcr.io/spiffe/spire-agent:1.15.3@sha256:41b0dcd8b258a69db9e2768292a060766fb76fd866e4bc925849981ea1b825ff
     command: ['-config', '/config/agent.conf']
@@ -97,13 +48,11 @@ services:
     tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
     depends_on: [spire-server, docker-metadata]
     networks: [workload-identity]
-
 networks:
   workload-identity:
     internal: true
     ipam:
       config: [{subnet: 10.232.231.0/28}]
-
 volumes:
   spire-server-data: {}
   spire-agent-data: {}

@@ -1,0 +1,18 @@
+{
+  "id": "spiffe://loom.local/workload/guardrail-proxy",
+  "socket": "unix:///run/spire/agent.sock",
+  "peers": [
+    "spiffe://loom.local/workload/control-plane",
+    "spiffe://loom.local/workload/agentgateway"
+  ],
+  "routes": {
+    "presidio-analyzer:5002": {
+      "address": "presidio-analyzer:5002",
+      "id": "spiffe://loom.local/workload/presidio-analyzer"
+    }
+  },
+  "identity_bindings": {
+    "spiffe://loom.local/workload/control-plane": ["control-plane"],
+    "spiffe://loom.local/workload/agentgateway": ["agentgateway"]
+  }
+}

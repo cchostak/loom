@@ -1,0 +1,32 @@
+{
+  "id": "spiffe://loom.local/workload/control-plane",
+  "socket": "unix:///run/spire/agent.sock",
+  "peers": [
+    "spiffe://loom.local/workload/guardrail-proxy",
+    "spiffe://loom.local/workload/agentgateway",
+    "spiffe://loom.local/workload/strands-researcher",
+    "spiffe://loom.local/workload/strands-planner",
+    "spiffe://loom.local/workload/strands-operator",
+    "spiffe://loom.local/workload/strands-publisher"
+  ],
+  "routes": {
+    "guardrail-proxy:9090": {
+      "address": "guardrail-proxy:9090",
+      "id": "spiffe://loom.local/workload/guardrail-proxy"
+    },
+    "agentgateway:8080": {
+      "address": "agentgateway:8080",
+      "id": "spiffe://loom.local/workload/agentgateway"
+    },
+    "agentgateway:3000": {
+      "address": "agentgateway:3000",
+      "id": "spiffe://loom.local/workload/agentgateway"
+    }
+  },
+  "identity_bindings": {
+    "spiffe://loom.local/workload/strands-researcher": ["strands-researcher"],
+    "spiffe://loom.local/workload/strands-planner": ["strands-planner"],
+    "spiffe://loom.local/workload/strands-operator": ["strands-operator"],
+    "spiffe://loom.local/workload/strands-publisher": ["strands-publisher"]
+  }
+}

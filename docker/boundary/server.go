@@ -3,6 +3,7 @@ package boundary
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 )
 
 type Server struct {
+	MCPSigner                  ed25519.PrivateKey
 	ModelCircuit, ToolCircuit  security.Circuit
 	Auth                       security.Authenticator
 	PolicyFile                 string
@@ -67,6 +69,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := p.Evaluate(a, time.Now().UTC())
+	controlContext := security.ControlContext{Tenant: id.Tenant, Workload: id.Workload, Session: id.Session, TraceID: trace, DecisionID: d.ID}
 	w.Header().Set("X-Loom-Decision-ID", d.ID)
 	if s.Audit.Record(a, d, trace, "decision", 0) != nil {
 		http.Error(w, "Audit unavailable", 503)
@@ -84,7 +87,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.GlobalBudgets != nil {
 			limiter = s.GlobalBudgets
 		}
-		release, err := limiter.Acquire(security.BudgetKey(id), len(body), tokens, time.Now())
+		var release func()
+		var err error
+		if contextual, ok := limiter.(security.ContextBudgetLimiter); ok {
+			release, err = contextual.AcquireFor(controlContext, security.BudgetKey(id), len(body), tokens, time.Now())
+		} else {
+			release, err = limiter.Acquire(security.BudgetKey(id), len(body), tokens, time.Now())
+		}
 		if err != nil {
 			s.deny(w, a, trace, 429, "budget_exceeded")
 			return
@@ -117,7 +126,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.Category == "model" {
 		circuit = &s.ModelCircuit
 	}
-	if !circuit.Allow(time.Now()) {
+	if !circuit.AllowFor(controlContext, time.Now()) {
 		s.deny(w, a, trace, 503, "circuit_open")
 		return
 	}
@@ -142,7 +151,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	response, err := s.Client.Do(req)
 	if err != nil {
-		circuit.Complete(false, time.Now())
+		circuit.CompleteFor(controlContext, false, time.Now())
 		_ = s.Audit.Record(a, d, trace, "result", 502)
 		http.Error(w, "Upstream unavailable", 502)
 		return
@@ -154,7 +163,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := response.StatusCode
-	circuit.Complete(status < 500, time.Now())
+	circuit.CompleteFor(controlContext, status < 500, time.Now())
 	// Inspect the entire result, including tool metadata and error content. No
 	// arbitrary upstream error body or SSE bytes reach the caller without a check.
 	if status >= 400 {
@@ -191,6 +200,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/json"
 	}
 	w.Header().Set("Content-Type", contentType)
+	if a.Category == "mcp" && status < 400 && len(result) > 0 && len(s.MCPSigner) == ed25519.PrivateKeySize {
+		boundSession := w.Header().Get("Mcp-Session-Id")
+		if boundSession == "" {
+			boundSession = session
+		}
+		for name, values := range security.SealMCP(s.MCPSigner, b, result, boundSession, trace, status, time.Now()) {
+			w.Header()[name] = values
+		}
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(result)
 }

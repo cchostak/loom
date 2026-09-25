@@ -11,6 +11,7 @@ import (
 )
 
 type Remote struct {
+	Events     security.EventSink
 	URL, Token string
 	Client     *http.Client
 }
@@ -85,4 +86,12 @@ func (w AuditWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	return len(b), nil
+}
+
+func (r Remote) AcquireFor(ctx security.ControlContext, key string, size, tokens int, now time.Time) (func(), error) {
+	release, err := r.Acquire(key, size, tokens, now)
+	if err != nil && r.Events != nil {
+		r.Events.Emit(security.ControlEvent{Kind: "budget", Reason: "shared_admission_denied", Resource: key, Context: ctx, At: now})
+	}
+	return release, err
 }

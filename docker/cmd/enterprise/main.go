@@ -5,7 +5,9 @@ import (
 	"crypto/x509"
 	rl "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"guardrail-proxy/enterprise"
+	"guardrail-proxy/security"
 	"log"
 	"net"
 	"net/http"
@@ -30,7 +32,15 @@ func key(name string) string {
 	return string(b)
 }
 func main() {
+	workload, err := security.WorkloadFromEnvironment()
+	if err != nil {
+		log.Fatal("Workload identity unavailable")
+	}
 	mode := required("LOOM_SERVICE_MODE")
+	if mode == "ingress" {
+		ingress()
+		return
+	}
 	if mode == "fixture" {
 		fixture()
 		return
@@ -41,12 +51,14 @@ func main() {
 	}
 	defer store.DB.Close()
 	audit := enterprise.Remote{}
-	if mode != "audit" {
+	if mode != "audit" && mode != "normalizer" {
 		audit = enterprise.Remote{URL: required("LOOM_AUDIT_URL"), Token: key("LOOM_AUDIT_TOKEN_FILE")}
 		store.Audit = func(v any) error { return audit.Call("/events", v, nil) }
 	}
 	var handler http.Handler
-	if mode == "connector" {
+	if mode == "normalizer" {
+		handler = enterprise.Normalizer{Store: store, IngestToken: key("LOOM_SERVICE_TOKEN_FILE"), ReadToken: key("LOOM_READ_TOKEN_FILE")}
+	} else if mode == "connector" {
 		proxy, err := url.Parse(required("LOOM_PROXY"))
 		if err != nil {
 			log.Fatal("Invalid proxy")
@@ -77,7 +89,11 @@ func main() {
 			if err != nil {
 				log.Fatal("Quota listener unavailable")
 			}
-			rpc := grpc.NewServer(grpc.MaxRecvMsgSize(65536))
+			options := []grpc.ServerOption{grpc.MaxRecvMsgSize(65536)}
+			if workload != nil {
+				options = append(options, grpc.Creds(credentials.NewTLS(workload.ServerTLS())))
+			}
+			rpc := grpc.NewServer(options...)
 			rl.RegisterRateLimitServiceServer(rpc, &enterprise.RateLimit{Store: store})
 			go func() {
 				if rpc.Serve(listener) != nil {
@@ -87,5 +103,5 @@ func main() {
 		}
 	}
 	server := &http.Server{Addr: ":8080", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 35 * time.Second, MaxHeaderBytes: 32768}
-	log.Fatal(server.ListenAndServe())
+	log.Fatal(security.ServeWorkload(server, workload))
 }

@@ -67,6 +67,8 @@ flowchart LR
   Collector --> Jaeger
 ```
 
+For visual end-to-end flows covering both happy and unhappy paths across model mediation, MCP tools, SPIFFE/SPIRE identity, telemetry normalization, and swarm handoffs, see the [Sequence Diagrams](docs/sequence-diagrams.md).
+
 Policy matches principal, workload, tenant, scope, method, tool/model, resource,
 destination, trust and sensitivity. The local registry assigns session identity;
 caller identity headers cannot grant authority. All supplied content is untrusted.

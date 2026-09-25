@@ -11,9 +11,18 @@ x-service: &service
   dns: ['127.0.0.1']
 
 services:
+  lab-ingress:
+    <<: *service
+    environment: {LOOM_SERVICE_MODE: ingress}
+    ports: ['127.0.0.1:18080:8080', '127.0.0.1:18081:8081', '127.0.0.1:18555:8555', '127.0.0.1:18686:8686']
+    networks: [lab-host, client-net, identity, observability-ui]
   control-plane: &edge
-    environment: {LOOM_ENTERPRISE_CONFIG: /enterprise/edge.json}
-    ports: !override ['127.0.0.1:18080:8080']
+    environment:
+      LOOM_ENTERPRISE_CONFIG: /enterprise/edge.json
+      LOOM_MCP_SIGNING_KEY: /identity/mcp-key.pem
+      LOOM_OTLP_LOGS_ENDPOINT: http://otel-collector:4319/v1/logs
+      LOOM_OTLP_TOKEN_FILE: /identity/otel-control-token
+    ports: !override []
     volumes:
       - ./.loom/enterprise/edge.json:/enterprise/edge.json:ro
       - ./.loom/enterprise/policy.json:/config/policy.json:ro
@@ -35,9 +44,10 @@ services:
     mem_limit: 512m
     cpus: 1
     tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
-    ports: !override ['127.0.0.1:18081:8080']
+    ports: !override []
     volumes:
       - ./config:/config:ro
+      - ./.loom/identity:/identity:ro
       - ./.loom/enterprise/edge.json:/enterprise/edge.json:ro
       - ./.loom/enterprise/policy.json:/config/policy.json:ro
       - enterprise-edge-b-audit:/audit
@@ -57,7 +67,7 @@ services:
     <<: *service
     build: {context: ./integrations/enterprise/issuer}
     volumes: ['./.loom/enterprise/issuer.json:/config/issuer.json:ro']
-    ports: ['127.0.0.1:18555:8080']
+    ports: []
     networks: [identity]
   state:
     <<: *service
@@ -120,20 +130,76 @@ services:
     networks:
       fixture-egress: {ipv4_address: 10.231.240.10}
   jaeger:
-    ports: !override ['127.0.0.1:18686:16686']
+    ports: !override []
 
 networks:
-  client-net: {internal: true}
-  observability-ui: {internal: true}
-  identity: {internal: true}
-  authority: {internal: true}
-  audit-edge: {internal: true}
-  audit-state: {internal: true}
-  audit-connector: {internal: true}
-  provider-internal: {internal: true}
-  gateway-quota: {internal: true}
-  connector-state: {internal: true}
-  proxy-internal: {internal: true}
+  lab-host:
+    ipam:
+      config: [{subnet: 10.232.230.0/28}]
+  agents:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.200.0/28}]
+  client-net:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.201.0/28}]
+  mediation:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.202.0/28}]
+  inspection:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.203.0/28}]
+  telemetry:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.204.0/28}]
+  observability-ui:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.205.0/28}]
+  provider-egress:
+    internal: false
+    ipam:
+      config: [{subnet: 10.232.206.0/28}]
+  identity:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.207.0/28}]
+  authority:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.208.0/28}]
+  audit-edge:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.209.0/28}]
+  audit-state:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.210.0/28}]
+  audit-connector:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.211.0/28}]
+  provider-internal:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.212.0/28}]
+  gateway-quota:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.213.0/28}]
+  connector-state:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.214.0/28}]
+  proxy-internal:
+    internal: true
+    ipam:
+      config: [{subnet: 10.232.215.0/28}]
   fixture-egress:
     internal: true
     ipam:

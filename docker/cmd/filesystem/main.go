@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+ "net"
 	"os"
 	"syscall"
 	"time"
@@ -11,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--health" {
-		if !healthy("http://localhost:8080/v1/models") {
+		if !listening("127.0.0.1:8080") || !listening("127.0.0.1:3000") {
 			os.Exit(1)
 		}
 		return
@@ -39,3 +40,6 @@ func healthy(url string) bool {
 	defer resp.Body.Close()
 	return resp.StatusCode == 200
 }
+
+// listening checks process listeners without spending an authenticated quota.
+func listening(address string)bool { c,err:=net.DialTimeout("tcp",address,2*time.Second);if err!=nil{return false};c.Close();return true }
