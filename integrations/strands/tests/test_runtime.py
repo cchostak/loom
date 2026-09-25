@@ -171,3 +171,14 @@ def test_opaque_metadata_is_not_model_content():
     asyncio.run(run())
     assert requests[0]["messages"][1]["content"] == "evidence"
     assert "a" * 32 not in json.dumps(requests)
+
+
+def test_tool_ids_are_unique_and_reproducible_within_agent():
+    async def run():
+        model = LoomModel(connection(lambda _: completion({"tool": "list_directory", "input": {}})))
+        ids = []
+        for _ in range(6):
+            events = [event async for event in model.stream([])]
+            ids.append(events[1]["contentBlockStart"]["start"]["toolUse"]["toolUseId"])
+        return ids
+    assert asyncio.run(run()) == [f"loom-tool-{n}" for n in range(1, 7)]

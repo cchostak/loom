@@ -41,11 +41,24 @@ docker compose -p loom-strands-lab -f docker-compose.yml \
   -f integrations/strands/compose.lab.yml --profile agents down
 ```
 
-Local credentials expire after seven days. Bootstrap checks consistency and does
-not silently rotate them. Follow the repository's local identity recovery process
-before provisioning a replacement; preserve unrelated identities. Repeated runs
-share each role's server-side session budget, so rapid reruns may correctly be
-throttled. Budgets are not reset by changing a client workflow ID.
+Each explicitly started host run issues fresh one-hour role credentials and
+revokes those from the previous run. A host lock prevents concurrent coordinators
+from revoking each other's credentials. Developer and pipeline credentials are
+preserved. Bootstrap refuses inconsistent files rather than silently repairing
+identity state. Only trusted host tooling can renew a run; changing a client
+workflow ID cannot reset Loom's execution budgets.
+
+The lab writes `strands-report.json` in the repository root with content-free
+scenario events and final verification flags. To find the lab's Jaeger UI port:
+
+```sh
+docker compose -p loom-strands-lab -f docker-compose.yml \
+  -f integrations/strands/compose.lab.yml port jaeger 16686
+```
+
+Use a `trace_id` from the report in Jaeger's trace lookup. The matching authoritative
+records are in the control plane's `/audit/security.jsonl`; the lab checks both
+sources automatically.
 
 ## Request path and roles
 
@@ -75,7 +88,7 @@ by a process that skips hooks entirely.
 events. Models must return one object containing either `text` or `tool` and
 `input`. Tool calls and results are serialized into the existing text protocol;
 streaming, multimedia, provider tool-calling extensions and arbitrary endpoints
-are unsupported. The MCP adapter uses Strands MCPClient with a POST-only transport;
+are unsupported. The MCP adapter uses Strands MCPClient with POST requests for protocol messages;
 an authenticated, owned DELETE releases each session on exit. Server-initiated
 sampling, subscriptions, resumption and subprocess transports are
 not available. Malformed responses fail closed.

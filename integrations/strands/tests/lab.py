@@ -3,7 +3,7 @@ import json
 import time
 import urllib.request
 
-from runner import call, compose, workflow
+from runner import ROOT, call, compose, workflow
 
 SCENARIOS = ("benign", "indirect", "escalation", "delegation", "exfiltration", "arguments", "runaway", "literal-injection", "tool-failure", "operator-denial")
 
@@ -139,14 +139,25 @@ def correlate(results):
 
 
 def run_lab():
+    report = {"passed": False, "scenarios": []}
+    destination = ROOT / "strands-report.json"
+    destination.write_text(json.dumps(report, indent=2) + "\n")
     no_bypass()
     results = []
     for scenario in SCENARIOS:
         result = workflow(scenario, lab=True)
+        item = {"scenario": scenario, "passed": False, "events": result["events"]}
+        report["scenarios"].append(item)
+        destination.write_text(json.dumps(report, indent=2) + "\n")
         assert_scenario(result)
+        item["passed"] = True
         results.append(result)
-        print(json.dumps({"scenario": scenario, "passed": True, "events": result["events"]}))
+        destination.write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps(item), flush=True)
     correlate(results)
     from tests.failures import failures
     failures()
-    print(json.dumps({"passed": True, "scenarios": len(results), "audit_and_trace_correlated": True}))
+    report.update(passed=True, audit_and_trace_correlated=True,
+                  session_cleanup_verified=True, outages_verified=True, no_bypass_verified=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps({"passed": True, "scenarios": len(results), "audit_and_trace_correlated": True}), flush=True)

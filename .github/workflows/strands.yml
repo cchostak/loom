@@ -22,13 +22,13 @@ jobs:
       - name: Lock, static checks and unit regressions
         run: make strands-test
       - name: Build and exercise real enforcement without provider credentials
-        run: make strands-lab > strands-results.jsonl
+        run: make strands-lab
       - name: Upload content-free scenario evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: strands-security-evidence
-          path: strands-results.jsonl
+          path: strands-report.json
           retention-days: 7
       - name: Stop isolated lab
         if: always()

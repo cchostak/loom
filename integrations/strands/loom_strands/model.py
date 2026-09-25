@@ -1,6 +1,5 @@
 """Text-only Loom protocol translated into native Strands tool-use events."""
 import json
-import uuid
 
 from strands.models.model import Model
 
@@ -17,6 +16,7 @@ class LoomModel(Model):
 
     def __init__(self, connection: Connection):
         self.connection = connection
+        self.tool_calls = 0
 
     def get_config(self):
         return {"model_id": MODEL, "context_window_limit": 16384}
@@ -56,8 +56,9 @@ class LoomModel(Model):
             raise LoomFailure("Malformed model action") from None
         yield {"messageStart": {"role": "assistant"}}
         if is_tool:
+            self.tool_calls += 1
             yield {"contentBlockStart": {"start": {"toolUse": {
-                "name": action["tool"], "toolUseId": uuid.uuid4().hex.translate(str.maketrans("0123456789abcdef", "abcdefghijklmnop"))}}}}
+                "name": action["tool"], "toolUseId": f"loom-tool-{self.tool_calls}"}}}}
             yield {"contentBlockDelta": {"delta": {"toolUse": {
                 "input": json.dumps(action["input"])}}}}
         else:

@@ -1,5 +1,5 @@
 """Four roles, each instantiated in its own credential and container boundary."""
-import uuid
+import itertools
 
 from strands import Agent, tool
 
@@ -29,6 +29,8 @@ def invoke(role: str, handoff: Handoff, connection: Connection) -> Handoff:
                      "operator": {"filesystem_list_directory", "list_directory"}}
         tools = [t for t in discovered if t.tool_name in permitted.get(role, set())]
 
+        requests = itertools.count(1)
+
         @tool
         def request_capability(name: str, arguments: dict) -> dict:
             """Request a capability from Loom. Loom may deny unavailable or unauthorized actions.
@@ -37,7 +39,7 @@ def invoke(role: str, handoff: Handoff, connection: Connection) -> Handoff:
                 name: Requested MCP capability name.
                 arguments: Requested structured arguments.
             """
-            return mcp.call_tool_sync(uuid.uuid4().hex, name, arguments)
+            return mcp.call_tool_sync(f"capability-{next(requests)}", name, arguments)
 
         agent = Agent(model=LoomModel(connection), tools=[*tools, request_capability],
                       agent_id=role, name=role, hooks=[limits], callback_handler=None,

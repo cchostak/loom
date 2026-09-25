@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Trusted host-side orchestration; never installed in the agent image."""
 import argparse
+import fcntl
 import json
 from pathlib import Path
 import subprocess
@@ -66,7 +67,7 @@ def worker(role, handoff, *, lab=False):
 
 def start(lab=False):
     call(["python3", "scripts/bootstrap.py"])
-    call(["python3", "scripts/bootstrap_strands.py"])
+    call(["python3", "scripts/bootstrap_strands.py", "--renew"])
     if lab:
         prepare_lab()
     call(compose(lab) + ["build", *["strands-" + r for r in ROLES]])
@@ -98,18 +99,26 @@ def main():
     parser.add_argument("mode", choices=["demo", "lab", "start-lab"])
     args = parser.parse_args()
     lab = args.mode != "demo"
-    start(lab)
-    if args.mode == "start-lab":
-        return
-    if lab:
-        from tests.lab import run_lab
-        run_lab()
-    else:
-        result = workflow(lab=False)
-        # Prompts/results stay out of terminal logs; handoff details remain within runtime.
-        print(json.dumps({k: v for k, v in result.items() if k not in ("handoff", "last_handoff")}, indent=2))
-        if not result["ok"]:
-            raise SystemExit(1)
+    state = ROOT / ".loom"
+    state.mkdir(mode=0o700, exist_ok=True)
+    with (state / "strands-run.lock").open("a") as lock:
+        # Only trusted host tooling can mint a new run. Concurrent coordinators
+        # must not revoke one another's credentials while agents are active.
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if args.mode == "lab":
+            (ROOT / "strands-report.json").write_text(json.dumps({"passed": False, "scenarios": []}) + "\n")
+        start(lab)
+        if args.mode == "start-lab":
+            return
+        if lab:
+            from tests.lab import run_lab
+            run_lab()
+        else:
+            result = workflow(lab=False)
+            # Prompts/results stay out of terminal logs; handoff details remain within runtime.
+            print(json.dumps({k: v for k, v in result.items() if k not in ("handoff", "last_handoff")}, indent=2))
+            if not result["ok"]:
+                raise SystemExit(1)
 
 
 if __name__ == "__main__":

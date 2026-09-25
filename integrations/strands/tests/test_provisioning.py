@@ -77,3 +77,28 @@ def test_timeout_removes_worker():
 def test_unknown_role_cannot_inject_compose_arguments():
     with pytest.raises(ValueError):
         worker("--privileged", {}, lab=True)
+
+
+def test_host_renewal_revokes_old_roles_and_preserves_developer(tmp_path):
+    path = registry(tmp_path)
+    bootstrap.provision(tmp_path)
+    old = json.loads(path.read_text())
+    bootstrap.provision(tmp_path, renew=True)
+    new = json.loads(path.read_text())
+    assert new[0] == old[0] and len(new) == 5
+    assert not ({r["sha256"] for r in old[1:]} & {r["sha256"] for r in new[1:]})
+    assert not ({r["identity"]["session"] for r in old[1:]} &
+                {r["identity"]["session"] for r in new[1:]})
+    for previous, current in zip(old[1:], new[1:]):
+        assert previous["identity"]["scopes"] == current["identity"]["scopes"]
+
+
+def test_renewal_refuses_inconsistent_state(tmp_path):
+    path = registry(tmp_path)
+    bootstrap.provision(tmp_path)
+    old = path.read_bytes()
+    token = tmp_path / ".loom/strands/planner.token"
+    token.unlink()
+    with pytest.raises(OSError):
+        bootstrap.provision(tmp_path, renew=True)
+    assert path.read_bytes() == old

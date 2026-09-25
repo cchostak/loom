@@ -75,8 +75,8 @@ be tested; it cannot implement an external action itself.
 
 The opaque credential determines principal/workload/tenant/session/scopes. The
 local UUID workflow and parent role correlate events but do not grant authority.
-The authenticated session is stable across workflow runs, preventing budget reset
-by changing a client identifier. Returned server-generated trace/decision IDs link
+The authenticated session remains fixed throughout a host-authorized run (including
+all lab scenarios), preventing budget reset by changing a client identifier. Returned server-generated trace/decision IDs link
 client events to the existing durable audit and privacy-filtered Jaeger traces.
 The runtime exports no SDK prompt spans and reaches no separate telemetry service.
 
@@ -215,3 +215,40 @@ protocol, restart Agentgateway alongside the control plane to remove orphaned
 children. Abrupt process/host failure can still orphan a session; the next phase
 needs server-side idle expiry and per-workload session quotas. Process limits cap
 the local damage but do not establish shared-service availability isolation.
+
+
+## Run authorization and evidence
+
+The trusted host coordinator holds a filesystem lock while it issues fresh
+one-hour role credentials and executes a run. Renewal revokes only the previous
+Strands role credentials and retains developer/pipeline identities. An agent
+cannot renew credentials, alter its authenticated session or access the issuer's
+registry. This separates a genuinely new, host-authorized run from a client
+attempting to reset a running workflow's budget. Interrupted provisioning fails
+closed on consistency checks.
+
+The machine-readable `strands-report.json` contains only scenario names, bounded
+lifecycle records and verification flags. No handoff content or credentials are
+included. The CI job archives that report, rather than labeling mixed console
+output as JSON. Failed or interrupted labs leave `passed: false`.
+
+## Local validation — 25 September 2026
+
+The complete keyless lab passed all ten scenarios, live network/process bypass
+probes, audit/Jaeger correlation, successful session teardown for every scenario
+role, and reversible provider, gateway and telemetry outages. The report is
+`strands-report.json`; all final verification flags are true.
+
+Additional checks passed: 60 Strands/provisioning/host-runner unit tests; 14 existing
+Python tests; all Go race tests and vet; existing real MCP, telemetry and container
+smoke tests; lock validation, Ruff, YAML lint and workflow analysis. Trivy found
+zero HIGH/CRITICAL OS or Python vulnerabilities in the rebuilt runtime image.
+The pinned SDK emits four known failed-startup cleanup warnings during unit tests.
+Hosted GitHub Actions and the optional paid real-model demonstration were not run.
+
+Tool references now use unique per-agent counters instead of random strings.
+They carry no authority and need only match calls to results within one agent.
+This makes protocol text sent through content inspection reproducible; no
+inspection rules, sensitive-data checks or authorization grants were relaxed.
+Host-runner tests also verify that startup failure invalidates old success
+reports and a concurrent coordinator cannot renew an active run's credentials.

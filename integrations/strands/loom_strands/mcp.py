@@ -1,4 +1,4 @@
-"""Strands MCPClient transport for Loom's bounded POST-only MCP subset."""
+"""Strands MCPClient transport for Loom's bounded MCP request and teardown subset."""
 from contextlib import asynccontextmanager
 import json
 
