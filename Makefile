@@ -40,9 +40,20 @@ up: init ## Build and start all services in detached mode
 	@echo ""
 	@$(MAKE) trace
 
-down: ## Stop and remove all containers and bridge network
-	@echo "==> Stopping Loom container stack..."
-	docker compose down
+down: ## Stop and remove all containers across all Loom stacks (base, strands-lab, enterprise)
+	@echo "==> Stopping all Loom container stacks..."
+	@docker compose down 2>/dev/null || true
+	@docker compose -f docker-compose.yml -f docker-compose.dex.yml down 2>/dev/null || true
+	@docker compose -f docker-compose.yml -f docker-compose.isolation.yml down 2>/dev/null || true
+	@docker compose -p loom-strands-lab -f docker-compose.yml -f integrations/strands/compose.lab.yml down 2>/dev/null || true
+	@docker compose -p loom-enterprise -f docker-compose.yml -f integrations/enterprise/compose.yml -f integrations/spiffe/compose.bootstrap.yml down 2>/dev/null || true
+	@REMAINING=$$(docker ps -q --filter "name=^loom-"); \
+	if [ -n "$$REMAINING" ]; then \
+		echo "Stopping lingering Loom containers: $$REMAINING"; \
+		docker stop $$REMAINING >/dev/null 2>&1 || true; \
+		docker rm $$REMAINING >/dev/null 2>&1 || true; \
+	fi
+	@echo -e "$(GREEN)✓ All Loom containers stopped.$(NC)"
 
 restart: down up ## Restart all stack services cleanly
 
@@ -50,7 +61,7 @@ logs: ## Stream unified logs from all services in real time
 	docker compose logs -f
 
 status: ## Show runtime status and health of all stack containers
-	docker compose ps
+	@docker ps --filter "name=^loom-"
 
 trace: ## Display service dashboard endpoints and Jaeger tracing guide
 	@echo "================================================================"
