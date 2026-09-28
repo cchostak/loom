@@ -37,7 +37,7 @@ processors:
         statements:
           - set(name, "loom.operation")
           - set(status.message, "")
-          - keep_keys(attributes, [])
+          - keep_keys(attributes, ["gen_ai.system", "gen_ai.request.model", "gen_ai.response.model", "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.cost", "llm.cost", "llm.provider", "http.status_code", "loom.workload", "loom.tenant", "spiffe.identity"])
           - set(trace_state, "")
           - set(links, nil)
       - context: spanevent
@@ -81,7 +81,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, transform/privacy, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_grpc, otlp_http/normalizer]
     logs/security:
       receivers: [otlp/security]
       processors: [memory_limiter, transform/governance, batch/governance]

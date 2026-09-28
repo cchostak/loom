@@ -3,10 +3,71 @@ package security
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"time"
 )
+
+// Authenticator validates incoming requests and extracts identity context.
+type Authenticator interface {
+	Authenticate(*http.Request) (IdentityContext, error)
+}
+
+// GatewayAuth authenticates requests arriving through AgentGateway with edge-verified identity.
+type GatewayAuth struct {
+	Audience string
+}
+
+func (g GatewayAuth) Authenticate(r *http.Request) (IdentityContext, error) {
+	auth := r.Header.Get("Authorization")
+	principal := r.Header.Get("X-Principal")
+	if auth == "" && principal == "" {
+		return IdentityContext{}, errors.New("authentication required")
+	}
+	if principal == "" {
+		principal = "gateway-authenticated-user"
+	}
+	workload := r.Header.Get("X-Workload")
+	if workload == "" {
+		workload = "gateway-workload"
+	}
+	tenant := r.Header.Get("X-Tenant")
+	if tenant == "" {
+		tenant = "default"
+	}
+	session := r.Header.Get("X-Session")
+	if session == "" {
+		session = "gateway-session"
+	}
+	return IdentityContext{
+		Principal:      principal,
+		Workload:       workload,
+		Tenant:         tenant,
+		Session:        session,
+		Authentication: "agentgateway-edge-verified",
+		Scopes:         []string{"workspace:read", "model:invoke"},
+	}, nil
+}
+
+// BudgetLimiter permits a durable shared admission implementation.
+type BudgetLimiter interface {
+	Acquire(string, int, int, time.Time) (func(), error)
+}
+
+// ContextBudgetLimiter carries trusted correlation to admission events.
+type ContextBudgetLimiter interface {
+	AcquireFor(ControlContext, string, int, int, time.Time) (func(), error)
+}
+
+// BudgetKey binds admission to server-authenticated identity, not caller labels.
+func BudgetKey(id IdentityContext) string {
+	b, _ := json.Marshal([]string{id.Tenant, id.Principal, id.Workload, id.Session})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
 
 type IdentityContext struct {
 	Principal      string   `json:"principal"`

@@ -16,9 +16,9 @@ This matrix maps AI security risks, vulnerabilities, and threats (aligned with O
 | **06** | **Denial of Wallet & Recursive Swarm Loops**<br/>Infinite agent loops or runaway queries exhaust LLM API credits and compute. | Token Bucket Rate Limiters, Sliding Window Budgets | **Bounded Execution Quotas**: Hard admission limits on RPM, tokens per session, concurrent operations, and workflow lifetime. Fail fast with 429. | [`budget.go`](docker/security/budget.go) |
 | **07** | **Cascading Failures from Provider Outages**<br/>Slow or failing upstream model APIs cause thread starvation and cascading latency. | Go `security.Circuit`, Envoy / Agentgateway Circuit Breaker | **Automated Circuit Breaking**: Track consecutive upstream failures (5xx/timeouts). Trip to `OPEN` on 3 failures; reject calls with 503 for 30s cooldown. | [`circuit.go`](docker/security/circuit.go) |
 | **08** | **Sensitive Data Disclosure (PII / Secrets)**<br/>Proprietary records, SSNs, or API keys leaked via user prompts or model completions. | Microsoft Presidio Analyzer, Gitleaks, regex pattern scrubber | **Synchronous Bidirectional Inspection**: Inspect input prompts and model outputs. Redact or reject requests with 403 on detected PII/secret leaks. | [`guardrail-proxy/`](docker/cmd/guardrail-proxy/), [`server.go`](docker/boundary/server.go) |
-| **09** | **Compliance Gaps & Non-Auditable Actions**<br/>Security events fragmented across logs, unable to satisfy SOC 2, ISO 27001, or EU AI Act. | OpenTelemetry Collector Contrib, SQLite, BlackShield schema | **Telemetry Normalization**: Transform guardrail events via OTel into unified compliance findings (`policy_violation`, `posture_drift`) in a queryable queue. | [`normalizer.go`](docker/enterprise/normalizer.go), [`otel-collector-config.yaml`](config/otel-collector-config.yaml) |
+| **09** | **Compliance Gaps & Non-Auditable Actions**<br/>Security events fragmented across logs, unable to satisfy SOC 2, ISO 27001, or EU AI Act. | OpenTelemetry Collector Contrib, SQLite, Unified Finding schema | **Telemetry Normalization**: Transform guardrail events via OTel into unified compliance findings (`policy_violation`, `posture_drift`) in a queryable queue. | [`normalizer.go`](docker/enterprise/normalizer.go), [`otel-collector-config.yaml`](config/otel-collector-config.yaml) |
 | **10** | **Identity Federation & Key Sprawl**<br/>Static hardcoded tokens distributed to developers and CI pipelines. | Dex OIDC Provider, OAuth 2.0 PKCE, JWKS validation | **Centralized Ephemeral Auth**: Short-lived JWT access tokens issued via PKCE/Client Credentials; validate tokens against pinned JWKS and issuer claims. | [`docker-compose.dex.yml`](docker-compose.dex.yml), [`bootstrap_dex.py`](scripts/bootstrap_dex.py) |
-| **11** | **Cross-Tenant Vector Data Leakage (RAG)**<br/>Embedding retrieval returns chunks belonging to other tenants or unauthorized ACLs. | Qdrant, Milvus, pgvector, Metadata Pre-filtering | **Document-Level Security (DLS)**: Pre-filter vector searches strictly by `tenant_id` and user ACLs before calculating cosine similarity. | [`docs/enterprise-lab.md`](docs/enterprise-lab.md), [`1.md`](epics/tasks/1.md) |
+| **11** | **Cross-Tenant Vector Data Leakage (RAG)**<br/>Embedding retrieval returns chunks belonging to other tenants or unauthorized ACLs. | Qdrant, Milvus, pgvector, Metadata Pre-filtering | **Document-Level Security (DLS)**: Pre-filter vector searches strictly by `tenant_id` and user ACLs before calculating cosine similarity. | [`docs/enterprise-lab.md`](docs/enterprise-lab.md), [`01-document-level-security.md`](epics/04-rag-vector-governance/01-document-level-security.md) |
 | **12** | **Indirect Prompt Injection in Knowledge Base**<br/>Ingested documents (PDFs, filings) contain hidden adversarial instructions. | Text extraction sandbox, gVisor, content sanitizers | **Ingestion Quarantine & Taint Tracking**: Parse documents in isolated micro-VMs; tag retrieved contexts with immutable taint markers (`tainted=true`). | [`connection.py`](integrations/strands/loom_strands/connection.py), [`mcp.py`](integrations/strands/loom_strands/mcp.py) |
 
 ---
@@ -30,7 +30,7 @@ Never rely on a single layer (e.g., prompt filtering alone). Loom applies securi
 1. **Network & Runtime Boundary**: gVisor sandbox (`runsc`), internal Docker bridges, SPIFFE mTLS mesh.
 2. **Ingress API Gateway**: Dex OIDC / Bearer authentication, CEL attribute policies, session rate budgets, circuit breakers.
 3. **Execution Context Layer**: Strict JSON Schema enforcement, Ed25519 signed MCP contracts, descriptor-relative `safefs` syscall sandboxing.
-4. **Governance & Observability**: OpenTelemetry attribute filtering, BlackShield Unified Finding normalization, hash-chained audit trails.
+4. **Governance & Observability**: OpenTelemetry attribute filtering, Unified Finding governance normalization, hash-chained audit trails.
 
 ### Fail-Closed Standard
 When any security dependency is unavailable (Presidio down, SPIRE socket unreachable, OIDC issuer timeout, circuit tripped, policy malformed), Loom's policy boundary **fails closed**—denying access immediately rather than silently bypassing controls.
@@ -51,7 +51,7 @@ cd docker && go test -v -race -run 'TestWorkload|TestSVID' ./security
 # Verify Session token budgets, concurrency limits & circuit breakers
 cd docker && go test -v -race -run 'TestBudget|TestCircuit' ./security
 
-# Verify Telemetry normalization & BlackShield finding queue
+# Verify Telemetry normalization & Unified Finding queue
 make test-telemetry
 
 # Run complete cross-language verification suite

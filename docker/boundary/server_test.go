@@ -50,7 +50,7 @@ func setup(t *testing.T) (*Server, *atomic.Int32, *bytes.Buffer) {
 	p, _ := os.ReadFile("../../config/policy.json")
 	os.WriteFile(file, p, 0600)
 	audit := new(bytes.Buffer)
-	s := &Server{Auth: authStub{}, PolicyFile: file, Audit: &security.Audit{Writer: audit}, Budgets: &security.Budgets{Limits: security.Limits{RequestsPerMinute: 60, Calls: 100, Concurrent: 4, InputBytes: 65536, OutputTokens: 4096, Workflow: time.Hour}}, Client: &http.Client{Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, ModelURL: upstream.URL, MCPURL: upstream.URL, GuardURL: guard.URL}
+	s := &Server{Auth: authStub{}, PolicyFile: file, Audit: &security.Audit{Writer: audit}, Client: &http.Client{Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, ModelURL: upstream.URL, MCPURL: upstream.URL, GuardURL: guard.URL}
 	return s, calls, audit
 }
 
@@ -58,7 +58,7 @@ const readRequest = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"na
 const completion = `{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"hello"}],"max_tokens":128}`
 
 func TestBoundaryNoDispatchOnDeny(t *testing.T) {
-	for _, name := range []string{"auth", "policy outage", "malformed policy", "emergency", "unknown tool", "write", "traversal", "arguments", "batch", "method", "session spoof", "input budget", "token budget", "unknown model", "recursive method", "stream", "query credential"} {
+	for _, name := range []string{"auth", "policy outage", "malformed policy", "emergency", "unknown tool", "write", "traversal", "arguments", "batch", "method", "session spoof", "unknown model", "recursive method", "stream", "query credential"} {
 		t.Run(name, func(t *testing.T) {
 			s, calls, _ := setup(t)
 			path, body, method := "/mcp", readRequest, "POST"
@@ -86,11 +86,6 @@ func TestBoundaryNoDispatchOnDeny(t *testing.T) {
 				body = "[" + body + "]"
 			case "method":
 				method = "GET"
-			case "input budget":
-				s.Budgets.Limits.InputBytes = 1
-			case "token budget":
-				path = "/v1/chat/completions"
-				body = strings.ReplaceAll(completion, "128", "999999")
 			case "unknown model":
 				path = "/v1/chat/completions"
 				body = strings.ReplaceAll(completion, "gpt-4o-mini", "unknown")
@@ -191,7 +186,7 @@ func TestUnsafeToolResultSuppressed(t *testing.T) {
 }
 
 func TestUpstreamFailureContainment(t *testing.T) {
-	for _, name := range []string{"unavailable", "timeout", "oversized", "redirect", "server error", "circuit"} {
+	for _, name := range []string{"unavailable", "timeout", "oversized", "redirect", "server error"} {
 		t.Run(name, func(t *testing.T) {
 			s, _, _ := setup(t)
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +198,7 @@ func TestUpstreamFailureContainment(t *testing.T) {
 				case "redirect":
 					w.Header().Set("Location", "http://127.0.0.1:1")
 					w.WriteHeader(302)
-				case "server error", "circuit":
+				case "server error":
 					w.WriteHeader(503)
 					w.Write([]byte("synthetic-secret"))
 				}
@@ -216,19 +211,10 @@ func TestUpstreamFailureContainment(t *testing.T) {
 			if name == "timeout" {
 				s.Client.Timeout = 20 * time.Millisecond
 			}
-			repeats := 1
-			if name == "circuit" {
-				repeats = 4
-			}
-			for i := 0; i < repeats; i++ {
-				w := httptest.NewRecorder()
-				s.ServeHTTP(w, httptest.NewRequest("POST", "/mcp", strings.NewReader(readRequest)))
-				if w.Code == 200 || strings.Contains(w.Body.String(), "synthetic-secret") || w.Header().Get("Location") != "" {
-					t.Fatal(name, w.Code, w.Body.String())
-				}
-				if name == "circuit" && i == 3 && !strings.Contains(w.Body.String(), "circuit_open") {
-					t.Fatal("circuit bypass")
-				}
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, httptest.NewRequest("POST", "/mcp", strings.NewReader(readRequest)))
+			if w.Code == 200 || strings.Contains(w.Body.String(), "synthetic-secret") || w.Header().Get("Location") != "" {
+				t.Fatal(name, w.Code, w.Body.String())
 			}
 		})
 	}

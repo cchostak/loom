@@ -1,10 +1,12 @@
 package boundary
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOwnedSessionDelete(t *testing.T) {
@@ -66,10 +68,16 @@ func TestSessionDeleteRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+type denyLimiter struct{}
+
+func (d denyLimiter) Acquire(string, int, int, time.Time) (func(), error) {
+	return nil, errors.New("budget exhausted")
+}
+
 func TestSessionCloseWorksAfterBudgetExhaustion(t *testing.T) {
 	s, calls, _ := setup(t)
 	s.sessions = map[string]string{"owned": "local/local-developer/local-agent/test"}
-	s.Budgets.Limits.InputBytes = -1
+	s.GlobalBudgets = denyLimiter{}
 	req := httptest.NewRequest("DELETE", "/mcp", nil)
 	req.Header.Set("Mcp-Session-Id", "owned")
 	w := httptest.NewRecorder()

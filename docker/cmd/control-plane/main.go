@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
-	"guardrail-proxy/boundary"
-	"guardrail-proxy/enterprise"
-	"guardrail-proxy/security"
+	"crypto/ed25519"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"time"
+
+	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"google.golang.org/grpc"
+	"guardrail-proxy/boundary"
+	"guardrail-proxy/enterprise"
+	"guardrail-proxy/security"
 )
 
 func main() {
@@ -35,13 +39,37 @@ func main() {
 	if _, err := security.LoadPolicy("/config/policy.json"); err != nil {
 		log.Fatal("Policy unavailable")
 	}
+
+	// Start ExtAuthz gRPC service on :9001 for AgentGateway deep validation delegation
+	var mcpSigner ed25519.PrivateKey
+	if path := os.Getenv("LOOM_MCP_SIGNING_KEY"); path != "" {
+		if b, err := os.ReadFile(path); err == nil {
+			mcpSigner, _ = security.LoadMCPSigner(b)
+		}
+	}
+	extAuthz, err := security.NewExtAuthzServer(mcpSigner)
+	if err != nil {
+		log.Fatal("ExtAuthz initialization failed: " + err.Error())
+	}
+	listener, err := net.Listen("tcp", ":9001")
+	if err != nil {
+		log.Fatal("ExtAuthz listener unavailable: " + err.Error())
+	}
+	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(65536))
+	authv3.RegisterAuthorizationServer(grpcServer, extAuthz)
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("ExtAuthz server failed: " + err.Error())
+		}
+	}()
+
 	log.Fatal(security.ServeWorkload(newServerWithWorkload(f, workload), workload))
 }
 
 func newServer(audit io.Writer) *http.Server { return newServerWithWorkload(audit, nil) }
 
 func newServerWithWorkload(audit io.Writer, workload *security.Workload) *http.Server {
-	s := &boundary.Server{Auth: security.Registry{File: "/identity/credentials.json", Audience: "loom-local"}, PolicyFile: "/config/policy.json", Audit: &security.Audit{Writer: audit}, Budgets: &security.Budgets{Limits: security.Limits{RequestsPerMinute: 60, Calls: 500, Concurrent: 4, InputBytes: 65536, OutputTokens: 4096, Workflow: time.Hour}}, Client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, ModelURL: "http://agentgateway:8080", MCPURL: "http://agentgateway:3000", GuardURL: "http://guardrail-proxy:9090"}
+	s := &boundary.Server{Auth: security.GatewayAuth{Audience: "loom-local"}, PolicyFile: "/config/policy.json", Audit: &security.Audit{Writer: audit}, Client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, ModelURL: "http://agentgateway:8080", MCPURL: "http://agentgateway:3000", GuardURL: "http://guardrail-proxy:9090"}
 	if endpoint := os.Getenv("LOOM_OTLP_LOGS_ENDPOINT"); endpoint != "" {
 		token := ""
 		if path := os.Getenv("LOOM_OTLP_TOKEN_FILE"); path != "" {
@@ -51,12 +79,7 @@ func newServerWithWorkload(audit io.Writer, workload *security.Workload) *http.S
 			}
 			token = string(b)
 		}
-		events := security.NewOTLPEvents(context.Background(), endpoint, token, nil)
-		s.Budgets.Events = events
-		s.ModelCircuit.Events = events
-		s.ModelCircuit.Resource = "model"
-		s.ToolCircuit.Events = events
-		s.ToolCircuit.Resource = "mcp"
+		_ = security.NewOTLPEvents(context.Background(), endpoint, token, nil)
 	}
 	if path := os.Getenv("LOOM_MCP_SIGNING_KEY"); path != "" {
 		b, err := os.ReadFile(path)

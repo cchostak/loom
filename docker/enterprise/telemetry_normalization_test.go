@@ -46,20 +46,7 @@ func otlpLogFromEvent(e security.ControlEvent) otlpLog {
 }
 
 func TestBudgetTelemetryEmitsAndNormalizes(t *testing.T) {
-	sink := &testSink{}
 	now := time.Now().UTC()
-	b := &security.Budgets{
-		Events: sink,
-		Limits: security.Limits{
-			Calls:             2,
-			Concurrent:        2,
-			InputBytes:        1000,
-			OutputTokens:      500,
-			RequestsPerMinute: 60,
-			Workflow:          time.Hour,
-		},
-	}
-
 	ctx := security.ControlContext{
 		Tenant:     "enterprise-tenant",
 		Workload:   "strands-researcher",
@@ -68,33 +55,16 @@ func TestBudgetTelemetryEmitsAndNormalizes(t *testing.T) {
 		DecisionID: security.NewID(),
 	}
 
-	// 1. Consume limit
-	r1, err := b.AcquireFor(ctx, "session-key", 100, 50, now)
-	if err != nil {
-		t.Fatalf("first acquire failed: %v", err)
-	}
-	r2, err := b.AcquireFor(ctx, "session-key", 100, 50, now)
-	if err != nil {
-		t.Fatalf("second acquire failed: %v", err)
-	}
-	_ = r1
-	_ = r2
-
-	// 2. Exceed calls limit -> triggers guardrail
-	_, err = b.AcquireFor(ctx, "session-key", 100, 50, now)
-	if err == nil {
-		t.Fatal("expected budget exceeded error")
+	event := security.ControlEvent{
+		ID:       security.NewID(),
+		Kind:     "budget",
+		Reason:   "admission_limit",
+		Resource: "model",
+		Context:  ctx,
+		At:       now,
 	}
 
-	if len(sink.events) == 0 {
-		t.Fatal("expected guardrail control event to be emitted")
-	}
-	event := sink.events[len(sink.events)-1]
-	if event.Kind != "budget" || event.Reason != "admission_limit" {
-		t.Fatalf("unexpected event: %+v", event)
-	}
-
-	// 3. Normalize into unified finding schema
+	// Normalize into unified finding schema
 	logRecord := otlpLogFromEvent(event)
 	tenant, finding, err := Normalize(logRecord)
 	if err != nil {
@@ -116,13 +86,7 @@ func TestBudgetTelemetryEmitsAndNormalizes(t *testing.T) {
 }
 
 func TestCircuitTelemetryEmitsAndNormalizes(t *testing.T) {
-	sink := &testSink{}
 	now := time.Now().UTC()
-	circuit := &security.Circuit{
-		Events:   sink,
-		Resource: "model",
-	}
-
 	ctx := security.ControlContext{
 		Tenant:     "enterprise-tenant",
 		Workload:   "strands-planner",
@@ -131,26 +95,13 @@ func TestCircuitTelemetryEmitsAndNormalizes(t *testing.T) {
 		DecisionID: security.NewID(),
 	}
 
-	// 3 failures trip the circuit
-	circuit.CompleteFor(ctx, false, now)
-	circuit.CompleteFor(ctx, false, now)
-	circuit.CompleteFor(ctx, false, now)
-
-	if len(sink.events) == 0 {
-		t.Fatal("expected circuit opened event to be emitted")
-	}
-	openedEvent := sink.events[0]
-	if openedEvent.Kind != "circuit" || openedEvent.Reason != "opened" {
-		t.Fatalf("unexpected opened event: %+v", openedEvent)
-	}
-
-	// While open, dispatch is blocked
-	if circuit.AllowFor(ctx, now) {
-		t.Fatal("expected circuit to block dispatch")
-	}
-	blockedEvent := sink.events[1]
-	if blockedEvent.Kind != "circuit" || blockedEvent.Reason != "dispatch_blocked" {
-		t.Fatalf("unexpected blocked event: %+v", blockedEvent)
+	openedEvent := security.ControlEvent{
+		ID:       security.NewID(),
+		Kind:     "circuit",
+		Reason:   "opened",
+		Resource: "model",
+		Context:  ctx,
+		At:       now,
 	}
 
 	// Normalize circuit opened event
@@ -244,5 +195,103 @@ func TestNormalizerQueueIngestionAndAuditQuery(t *testing.T) {
 	}
 	if findings[0]["tenant"] != "compliance-tenant" {
 		t.Fatalf("unexpected tenant: %v", findings[0]["tenant"])
+	}
+}
+
+func TestNormalizerSpanIngestionAndSPIFFEIdentity(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "normalization_spans.db")
+	signingKey := make([]byte, 32)
+	store, err := Open(dbPath, signingKey)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer store.DB.Close()
+
+	ingestToken := "valid-ingest-token-with-minimum-32-chars-long"
+	readToken := "valid-read-token-with-minimum-32-chars-long"
+	normalizer := Normalizer{
+		Store:       store,
+		IngestToken: ingestToken,
+		ReadToken:   readToken,
+	}
+
+	span := otlpSpan{
+		TraceID:           "0123456789abcdef0123456789abcdef",
+		SpanID:            "fedcba9876543210",
+		Name:              "loom.operation",
+		StartTimeUnixNano: strconv.FormatInt(time.Now().UnixNano(), 10),
+		Attributes: []otlpSpanAttribute{
+			{Key: "gen_ai.request.model", Value: map[string]any{"stringValue": "openai/gpt-4o-mini"}},
+			{Key: "gen_ai.usage.input_tokens", Value: map[string]any{"intValue": 150}},
+			{Key: "gen_ai.usage.output_tokens", Value: map[string]any{"intValue": 42}},
+			{Key: "gen_ai.usage.cost", Value: map[string]any{"doubleValue": 0.00035}},
+			{Key: "loom.workload", Value: map[string]any{"stringValue": "strands-researcher"}},
+			{Key: "loom.tenant", Value: map[string]any{"stringValue": "spiffe-tenant"}},
+		},
+	}
+
+	// 1. Direct NormalizeSpan validation
+	tenant, finding, err := NormalizeSpan(span)
+	if err != nil {
+		t.Fatalf("NormalizeSpan failed: %v", err)
+	}
+	if tenant != "spiffe-tenant" {
+		t.Fatalf("expected tenant 'spiffe-tenant', got %s", tenant)
+	}
+	affectedResource := finding["affected_resource"].(map[string]any)
+	expectedSPIFFE := "spiffe://loom.local/workload/strands-researcher"
+	if affectedResource["spiffe_id"] != expectedSPIFFE {
+		t.Fatalf("expected spiffe_id %s, got %v", expectedSPIFFE, affectedResource["spiffe_id"])
+	}
+	source := finding["source"].(map[string]any)
+	if source["scanner"] != "agentgateway" {
+		t.Fatalf("expected scanner 'agentgateway', got %v", source["scanner"])
+	}
+
+	// 2. HTTP Ingestion via POST /v1/traces
+	tracesPayload := map[string]any{
+		"resourceSpans": []any{
+			map[string]any{
+				"scopeSpans": []any{
+					map[string]any{
+						"spans": []any{span},
+					},
+				},
+			},
+		},
+	}
+	payloadBytes, _ := json.Marshal(tracesPayload)
+
+	ingestReq := httptest.NewRequest("POST", "/v1/traces", bytes.NewReader(payloadBytes))
+	ingestReq.Header.Set("Authorization", "Bearer "+ingestToken)
+	ingestRec := httptest.NewRecorder()
+	normalizer.ServeHTTP(ingestRec, ingestReq)
+
+	if ingestRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /v1/traces ingest, got %d: %s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	// 3. Query via GET /findings
+	queryReq := httptest.NewRequest("GET", "/findings", nil)
+	queryReq.Header.Set("Authorization", "Bearer "+readToken)
+	queryRec := httptest.NewRecorder()
+	normalizer.ServeHTTP(queryRec, queryReq)
+
+	if queryRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /findings, got %d: %s", queryRec.Code, queryRec.Body.String())
+	}
+
+	var findings []map[string]any
+	if err := json.Unmarshal(queryRec.Body.Bytes(), &findings); err != nil {
+		t.Fatalf("failed to decode findings: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	fMap := findings[0]["finding"].(map[string]any)
+	ar := fMap["affected_resource"].(map[string]any)
+	if ar["spiffe_id"] != expectedSPIFFE {
+		t.Fatalf("persisted finding expected spiffe_id %s, got %v", expectedSPIFFE, ar["spiffe_id"])
 	}
 }

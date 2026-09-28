@@ -16,11 +16,9 @@ import (
 
 type Server struct {
 	MCPSigner                  ed25519.PrivateKey
-	ModelCircuit, ToolCircuit  security.Circuit
 	Auth                       security.Authenticator
 	PolicyFile                 string
 	Audit                      *security.Audit
-	Budgets                    *security.Budgets
 	GlobalBudgets              security.BudgetLimiter
 	Client                     *http.Client
 	ModelURL, MCPURL, GuardURL string
@@ -82,17 +80,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Closing an owned session releases resources and must remain possible when
 	// an execution budget is exhausted. Authentication, policy, ownership and
 	// audit still apply; cleanup cannot create sessions or invoke tools.
-	if r.Method != http.MethodDelete {
-		var limiter security.BudgetLimiter = s.Budgets
-		if s.GlobalBudgets != nil {
-			limiter = s.GlobalBudgets
-		}
+	if r.Method != http.MethodDelete && s.GlobalBudgets != nil {
 		var release func()
 		var err error
-		if contextual, ok := limiter.(security.ContextBudgetLimiter); ok {
+		if contextual, ok := s.GlobalBudgets.(security.ContextBudgetLimiter); ok {
 			release, err = contextual.AcquireFor(controlContext, security.BudgetKey(id), len(body), tokens, time.Now())
 		} else {
-			release, err = limiter.Acquire(security.BudgetKey(id), len(body), tokens, time.Now())
+			release, err = s.GlobalBudgets.Acquire(security.BudgetKey(id), len(body), tokens, time.Now())
 		}
 		if err != nil {
 			s.deny(w, a, trace, 429, "budget_exceeded")
@@ -122,14 +116,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.Category == "model" {
 		target = s.ModelURL + "/v1/chat/completions"
 	}
-	circuit := &s.ToolCircuit
-	if a.Category == "model" {
-		circuit = &s.ModelCircuit
-	}
-	if !circuit.AllowFor(controlContext, time.Now()) {
-		s.deny(w, a, trace, 503, "circuit_open")
-		return
-	}
 	req, err := http.NewRequestWithContext(ctx, r.Method, target, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "Upstream unavailable", 502)
@@ -151,7 +137,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	response, err := s.Client.Do(req)
 	if err != nil {
-		circuit.CompleteFor(controlContext, false, time.Now())
 		_ = s.Audit.Record(a, d, trace, "result", 502)
 		http.Error(w, "Upstream unavailable", 502)
 		return
@@ -163,7 +148,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := response.StatusCode
-	circuit.CompleteFor(controlContext, status < 500, time.Now())
+
 	// Inspect the entire result, including tool metadata and error content. No
 	// arbitrary upstream error body or SSE bytes reach the caller without a check.
 	if status >= 400 {

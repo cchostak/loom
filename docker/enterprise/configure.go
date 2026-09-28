@@ -11,14 +11,43 @@ import (
 	"time"
 )
 
+type OIDCConfig struct {
+	Issuer        string `json:"issuer"`
+	Audience      string `json:"audience"`
+	DiscoveryURL  string `json:"discovery_url,omitempty"`
+	JWKSURL       string `json:"jwks_url,omitempty"`
+	PublicJWKSURL string `json:"public_jwks_url,omitempty"`
+	Bindings      []any  `json:"bindings,omitempty"`
+}
+
 type Config struct {
-	OIDC            security.OIDC `json:"oidc"`
-	Resource        string        `json:"resource"`
-	StateURL        string        `json:"state_url"`
-	AuditURL        string        `json:"audit_url"`
-	StateTokenFile  string        `json:"state_token_file"`
-	AuditTokenFile  string        `json:"audit_token_file"`
-	DispatchKeyFile string        `json:"dispatch_key_file"`
+	OIDC            OIDCConfig `json:"oidc"`
+	Resource        string     `json:"resource"`
+	StateURL        string     `json:"state_url"`
+	AuditURL        string     `json:"audit_url"`
+	StateTokenFile  string     `json:"state_token_file"`
+	AuditTokenFile  string     `json:"audit_token_file"`
+	DispatchKeyFile string     `json:"dispatch_key_file"`
+}
+
+type OIDCAuth struct {
+	Issuer   string
+	Audience string
+}
+
+func (o *OIDCAuth) Authenticate(r *http.Request) (security.IdentityContext, error) {
+	principal := r.Header.Get("X-Principal")
+	if principal == "" {
+		principal = "gateway-authenticated-user"
+	}
+	return security.IdentityContext{
+		Principal:      principal,
+		Workload:       "oidc-client",
+		Tenant:         "default",
+		Session:        "oidc-session",
+		Authentication: "dex-oidc-gateway",
+		Scopes:         []string{"workspace:read", "model:invoke"},
+	}, nil
 }
 
 func secret(path string) ([]byte, error) {
@@ -53,7 +82,7 @@ func ConfigureWithWorkload(s *boundary.Server, path string, workload *security.W
 	// Identity-only mode: no remote state service, audit service, or dispatch
 	// signing key required. Local fallbacks are preserved from the base Server.
 	if c.StateURL == "" && c.AuditURL == "" && c.DispatchKeyFile == "" {
-		s.Auth = &c.OIDC
+		s.Auth = &OIDCAuth{Issuer: c.OIDC.Issuer, Audience: c.OIDC.Audience}
 		s.ResourceURL = c.Resource
 		api := API{Auth: s.Auth, State: Remote{}, Next: s, Resource: c.Resource, Issuer: c.OIDC.Issuer}
 		s.Metadata = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { api.ServeHTTP(w, r) })
@@ -72,8 +101,8 @@ func ConfigureWithWorkload(s *boundary.Server, path string, workload *security.W
 	if err != nil {
 		return nil, err
 	}
-	state := Remote{URL: c.StateURL, Token: string(stateToken), Events: s.Budgets.Events}
-	s.Auth = ActiveAuth{Auth: &c.OIDC, State: state}
+	state := Remote{URL: c.StateURL, Token: string(stateToken)}
+	s.Auth = ActiveAuth{Auth: &OIDCAuth{Issuer: c.OIDC.Issuer, Audience: c.OIDC.Audience}, State: state}
 	if workload != nil {
 		s.Auth = security.WorkloadAuth{Auth: s.Auth, Bindings: workload.Config.IdentityBindings}
 	}

@@ -2,8 +2,8 @@
 
 This document illustrates the operational sequences across Loom's security boundaries, detailing both **happy flows** (authorized, inspected execution) and **unhappy flows** (denials, tampering, quota limits, circuit breaks, and attack mitigations).
 
-- [1. AI Model Inference Mediation](#1-ai-model-inference-mediation)
-- [2. Model Context Protocol (MCP) Tool Execution & Cryptographic Sealing](#2-model-context-protocol-mcp-tool-execution--cryptographic-sealing)
+- [1. AI Model Inference Mediation (AgentGateway Edge)](#1-ai-model-inference-mediation-agentgateway-edge)
+- [2. Model Context Protocol (MCP) Tool Execution & ExtAuthz Deep Validation](#2-model-context-protocol-mcp-tool-execution--extauthz-deep-validation)
 - [3. Zero-Trust Workload Identity (SPIFFE/SPIRE & mTLS A2A)](#3-zero-trust-workload-identity-spiffespire--mtls-a2a)
 - [4. Telemetry Normalization & Unified Compliance Evidence Queue](#4-telemetry-normalization--unified-compliance-evidence-queue)
 - [5. Multi-Agent Swarm Orchestration, Least Privilege & Lineage Handoff](#5-multi-agent-swarm-orchestration-least-privilege--lineage-handoff)
@@ -11,70 +11,55 @@ This document illustrates the operational sequences across Loom's security bound
 
 ---
 
-## 1. AI Model Inference Mediation
+## 1. AI Model Inference Mediation (AgentGateway Edge)
 
-Mediation flow for user and agent model completion requests through authentication, versioned policy, session budgets, circuit breaker, content guardrails, and audit logging.
+Mediation flow for user and agent model completion requests through edge authentication, CEL claim policies, native token/dollar budgets, local rate limits, content guardrails, and audit logging.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as Client / Agent / IDE
-    participant Boundary as Boundary Server<br/>(boundary.Server)
-    participant Auth as Authenticator<br/>(Registry / OIDC / SVID)
-    participant Policy as Policy Engine<br/>(security.Policy)
-    participant Budget as Budget Controller<br/>(security.Budgets)
-    participant Circuit as Circuit Breaker<br/>(security.Circuit)
+    participant Gateway as AgentGateway<br/>(Edge Perimeter)
+    participant Dex as Dex IdP<br/>(OIDC Issuer)
     participant Guard as Guardrail Proxy<br/>(PII & Content Guard)
-    participant Upstream as Agentgateway / LLM
-    participant Audit as Audit & Telemetry<br/>(Audit & OTLP)
+    participant Upstream as Model Provider<br/>(OpenRouter / LLM)
+    participant OTel as OTel Collector<br/>(Traces & Metrics)
 
-    Client->>Boundary: POST /v1/chat/completions (Bearer Token / mTLS SVID)
-    alt Unhappy: Unauthenticated / Invalid Credential
-        Boundary->>Auth: Authenticate(r)
-        Auth-->>Boundary: error (invalid / expired / unknown)
-        Boundary-->>Client: 401 Unauthorized (WWW-Authenticate: Bearer)
-    else Happy: Authenticated Identity
-        Boundary->>Auth: Authenticate(r)
-        Auth-->>Boundary: IdentityContext (Principal, Workload, Tenant, Session)
-        Boundary->>Policy: Evaluate(ActionRequest)
-        alt Unhappy: Policy Denial (Forbidden Model / Workload Mismatch)
-            Policy-->>Boundary: PolicyDecision (Outcome: "deny", Reason: "forbidden_model")
-            Boundary-->>Client: 403 Forbidden ("Policy denied: forbidden_model")
-        else Policy Allowed
-            Boundary->>Budget: AcquireFor(ControlContext, BudgetKey, tokens)
-            alt Unhappy: Budget Exceeded (RPM / Tokens / Concurrency)
-                Budget->>Audit: Emit ControlEvent ("budget", "admission_limit")
-                Budget-->>Boundary: error ("budget exceeded")
-                Boundary-->>Client: 429 Too Many Requests ("budget_exceeded")
-            else Budget Admitted
-                Boundary->>Circuit: AllowFor(ControlContext, now)
-                alt Unhappy: Circuit Breaker Open (Upstream Outage)
-                    Circuit->>Audit: Emit ControlEvent ("circuit", "dispatch_blocked")
-                    Boundary-->>Client: 503 Service Unavailable ("circuit_open")
-                else Circuit Healthy (Closed)
-                    Boundary->>Guard: POST /validate (inspect prompt)
-                    alt Unhappy: Input Guardrail Triggered (PII / Injection Pattern)
-                        Guard-->>Boundary: ValidationResponse (Status: "rejected")
-                        Boundary-->>Client: 403 Forbidden ("Input inspection denied")
-                    else Prompt Clean
-                        Boundary->>Upstream: POST /v1/chat/completions (Normalized Body, Trace Headers)
-                        alt Unhappy: Upstream Network / Timeout Failure
-                            Upstream-->>Boundary: Connection error / 502
-                            Boundary->>Circuit: CompleteFor(ctx, success: false)
-                            Note over Circuit: 3 consecutive failures trip circuit to OPEN (30s cooldown)
-                            Boundary-->>Client: 502 Bad Gateway ("Upstream unavailable")
-                        else Upstream 200 OK
-                            Upstream-->>Boundary: 200 OK + Raw Completion JSON
-                            Boundary->>Circuit: CompleteFor(ctx, success: true)
-                            Boundary->>Guard: POST /validate (inspect completion output)
-                            alt Unhappy: Output Inspection Denied (PII / Secret Leak)
-                                Guard-->>Boundary: ValidationResponse (Status: "rejected")
-                                Boundary-->>Client: 403 Forbidden ("Output inspection denied")
-                            else Output Safe
-                                Guard-->>Boundary: ValidationResponse (Status: "allowed")
-                                Boundary->>Audit: Record result (200, "result")
-                                Boundary-->>Client: 200 OK + Filtered JSON + Trace Headers
-                            end
+    Client->>Gateway: POST /v1/chat/completions (Bearer JWT)
+    Note over Gateway: Phase 1: Native Edge Auth & CEL Claim Verification
+    Gateway->>Dex: Verify JWT signature & claims against JWKS
+    alt Unhappy: Expired / Unknown / Invalid Issuer
+        Dex-->>Gateway: Validation Failure
+        Gateway-->>Client: 401 Unauthorized (Invalid JWT)
+    else Happy: Valid Token
+        Note over Gateway: Evaluate CEL Policy: jwt.claims["iss"] == "https://dex.loom.local" && jwt.sub != ""
+        alt Unhappy: CEL Authorization Claim Mismatch
+            Gateway-->>Client: 403 Forbidden ("CEL policy denial: unauthorized subject/issuer")
+        else CEL Claim Approved
+            Note over Gateway: Phase 2: Native Rate Limit & Budget Enforcement
+            Note over Gateway: Evaluate localRateLimit (60 RPM, 100k tokens/hr) & apiKey.budgets ($50/day)
+            alt Unhappy: Rate Limit or Dollar/Token Budget Exceeded
+                Gateway-->>Client: 429 Too Many Requests ("budget/rate limit exceeded")
+            else Budget & Rate Limit Admitted
+                Gateway->>Guard: POST /validate (inspect prompt)
+                alt Unhappy: Input Guardrail Triggered (PII / Injection Pattern)
+                    Guard-->>Gateway: ValidationResponse (Status: "rejected")
+                    Gateway-->>Client: 403 Forbidden ("Input inspection denied")
+                else Prompt Clean
+                    Gateway->>Upstream: POST /v1/chat/completions (Sanitized Body, Traceparent)
+                    alt Unhappy: Upstream Network / Timeout Failure
+                        Upstream-->>Gateway: Connection error / 502
+                        Gateway-->>Client: 502 Bad Gateway ("Upstream unavailable")
+                    else Upstream 200 OK
+                        Upstream-->>Gateway: 200 OK + Completion JSON
+                        Gateway->>Guard: POST /validate (inspect completion output)
+                        alt Unhappy: Output Inspection Denied (PII / Secret Leak)
+                            Guard-->>Gateway: ValidationResponse (Status: "rejected")
+                            Gateway-->>Client: 403 Forbidden ("Output inspection denied")
+                        else Output Safe
+                            Guard-->>Gateway: ValidationResponse (Status: "allowed")
+                            Gateway->>OTel: Export Trace Span (Model, Input/Output Tokens, Cost)
+                            Gateway-->>Client: 200 OK + Filtered JSON + Trace Headers
                         end
                     end
                 end
@@ -85,61 +70,51 @@ sequenceDiagram
 
 ---
 
-## 2. Model Context Protocol (MCP) Tool Execution & Cryptographic Sealing
+## 2. Model Context Protocol (MCP) Tool Execution & ExtAuthz Deep Validation
 
-MCP tool discovery, offline signed tool contracts, schema validation, prompt injection sanitization, safe filesystem sandboxing, and response cryptographic sealing.
+Operational flow: `Client -> AgentGateway (OIDC/Budget/RateLimit via CEL) -> gRPC ExtAuthz (Deep Schema/Crypto check) -> Backend Agent/MCP Server (SPIFFE mTLS)`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Agent as Strands Agent Worker
-    participant Interceptor as MCP Interceptor<br/>(MCPInterceptorMiddleware)
-    participant Boundary as Boundary Server<br/>(/mcp endpoint)
-    participant SafeFS as SafeFS Stdio Server<br/>(O_NOFOLLOW Sandboxed)
-    participant Guard as Guardrail Proxy<br/>(/validate)
+    actor Client as Agent / Strands Worker
+    participant Gateway as AgentGateway<br/>(Edge Perimeter)
+    participant ExtAuthz as Control Plane ExtAuthz<br/>(gRPC :9001)
+    participant SafeFS as Backend MCP Server<br/>(SafeFS Stdio / Container)
     participant Signer as MCP Signer<br/>(Ed25519 Key)
 
-    Note over Agent,Interceptor: Phase 1: Tool Discovery & Poisoning Prevention
-    Agent->>Interceptor: Request tools list ("tools/list")
-    Interceptor->>Boundary: POST /mcp ("tools/list")
-    Boundary->>SafeFS: JSON-RPC tools/list
-    SafeFS-->>Boundary: Available tool schemas
-    Boundary-->>Interceptor: JSON-RPC Response (tools array)
-    alt Unhappy: Tool Poisoning / Mutated Schema
-        Note over Interceptor: Validates against signed tool_contract.json & TOOL_DEFINITION_SCHEMA
-        Interceptor-->>Agent: Terminate exchange (LoomFailure: "Tool poisoning / schema mismatch")
-    else Happy: Tool Definitions Match Signed Contract
-        Interceptor-->>Agent: Approved tools (read_text_file, list_directory)
-    end
-
-    Note over Agent,Interceptor: Phase 2: Tool Execution, Traversal Defense & Sealing
-    Agent->>Interceptor: Invoke tool ("tools/call", args: {path: "/workspace/report.txt"})
-    alt Unhappy: Path Traversal Attack ("../", backslashes, control characters)
-        Interceptor-->>Agent: Reject call (LoomFailure: "MCP resource denied")
-    else Happy: Valid Canonical Path
-        Interceptor->>Boundary: POST /mcp (JSON-RPC call, session token)
-        alt Unhappy: Session Hijacking Attempt
-            Boundary-->>Interceptor: 403 Forbidden ("session_mismatch")
-        else Authorized Session
-            Boundary->>SafeFS: Execute tool call
-            alt Unhappy: Symlink / Boundary Escape
-                SafeFS-->>Boundary: Error ("Tool denied" via O_NOFOLLOW)
-            else Legitimate File Read
-                SafeFS-->>Boundary: File content (< 64 KiB)
-            end
-            Boundary->>Guard: POST /validate (inspect output text)
-            Guard-->>Boundary: Allowed
-            Boundary->>Signer: SealMCP(Ed25519Key, reqBody, respBody, session, trace)
-            Signer-->>Boundary: Headers: X-Loom-MCP-Signature, X-Loom-MCP-Issued
-            Boundary-->>Interceptor: 200 OK + MCP Result + Signature Headers
-            alt Unhappy: Response Tampered or Stale (> 45s)
-                Interceptor-->>Agent: Terminate exchange (LoomFailure: "MCP response auth failed")
-            else Cryptographically Authentic Response
-                alt Unhappy: Contains Raw Control Characters
-                    Interceptor-->>Agent: Terminate exchange (LoomFailure: "control characters")
-                else Clean Payload: Neutralize Delimiters
-                    Interceptor->>Interceptor: Delimiters -> [SANITIZED_INJECTION_MARKER]
-                    Interceptor-->>Agent: Safe tool output + DataContext(tainted: true)
+    Note over Client,Gateway: 1. Edge Request Ingestion
+    Client->>Gateway: POST /mcp (JSON-RPC tools/call, Bearer JWT)
+    Note over Gateway: Edge JWT & CEL Claim Check (jwtAuth)
+    alt Unhappy: JWT Invalid or Unauthenticated
+        Gateway-->>Client: 401 Unauthorized
+    else Edge Authenticated
+        Note over Gateway: Edge CEL Tool Allowlist: mcp.tool.name in ["read_text_file", "list_directory"]
+        alt Unhappy: Tool Not in Edge Allowlist
+            Gateway-->>Client: 403 Forbidden ("Tool capability denied by CEL policy")
+        else Tool Allowed at Edge
+            Note over Gateway,ExtAuthz: 2. Delegated Deep Validation (gRPC ExtAuthz)
+            Gateway->>ExtAuthz: envoy.service.auth.v3.Authorization/Check (Request Body & Headers)
+            Note over ExtAuthz: Verify tool_contract.json against Publisher Ed25519 Public Key
+            alt Unhappy: Contract Signature Tampered
+                ExtAuthz-->>Gateway: CheckResponse (Status: 7 PERMISSION_DENIED, 403 Forbidden)
+                Gateway-->>Client: 403 Forbidden ("MCP contract signature invalid")
+            else Contract Validated
+                Note over ExtAuthz: Deep JSON Schema Validation (InputSchema: path required)
+                alt Unhappy: Path Traversal ("../", "\\", outside /workspace)
+                    ExtAuthz-->>Gateway: CheckResponse (Status: 7, 403 Forbidden)
+                    Gateway-->>Client: 403 Forbidden ("Path traversal / boundary denied")
+                else Unhappy: Prompt Injection Marker Detected ("[SYSTEM]", "ignore instructions")
+                    ExtAuthz-->>Gateway: CheckResponse (Status: 7, 403 Forbidden)
+                    Gateway-->>Client: 403 Forbidden ("Prompt injection marker detected")
+                else Happy: Deep Validation Passed
+                    ExtAuthz->>Signer: Sign Request & Issue X-Loom-MCP-Signature
+                    Signer-->>ExtAuthz: Ed25519 Signature
+                    ExtAuthz-->>Gateway: CheckResponse (Status: 0 OK, Header: x-loom-mcp-validated=true, signature)
+                    Note over Gateway,SafeFS: 3. Backend Dispatch over SPIFFE mTLS
+                    Gateway->>SafeFS: Dispatch JSON-RPC tool call (SPIFFE mTLS)
+                    SafeFS-->>Gateway: 200 OK + Tool Execution Result
+                    Gateway-->>Client: 200 OK + Sealed Result + Signature Headers
                 end
             end
         end
@@ -197,34 +172,31 @@ sequenceDiagram
 
 ## 4. Telemetry Normalization & Unified Compliance Evidence Queue
 
-Guardrail trigger events (budget limits, circuit breaker trips) converted to OpenTelemetry log records, transformed by OTel Collector, normalized into the BlackShield Unified Finding schema, and stored in the SQLite compliance queue.
+AgentGateway native trace, metric, and cost outputs ingested by OTel Collector, routed to the Normalizer service, enriched with SPIFFE workload identity context, and transformed into the unified governance finding schema.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Guardrail as Security Guardrail<br/>(budget.go / circuit.go)
-    participant OTLPClient as OTLP Log Sink<br/>(security.OTLPEvents)
-    participant OTelCol as OTel Collector Contrib<br/>(:4319 / :4318)
+    participant Gateway as AgentGateway<br/>(Native OTel Exporter)
+    participant OTelCol as OTel Collector Contrib<br/>(Pipelines: traces & logs)
     participant Normalizer as Normalizer Service<br/>(enterprise.Normalizer)
     participant Queue as SQLite Store<br/>(normalization_queue)
     actor Auditor as Compliance Auditor / SIEM
 
-    Note over Guardrail,OTLPClient: 1. Guardrail Breach: Emit ControlEvent(budget/circuit, SHA256 digest)
-    Guardrail->>OTLPClient: Emit(ControlEvent: Kind="budget", Reason="admission_limit", Resource=digest)
-    Note over OTLPClient,OTelCol: 2. Asynchronous Bounded Export
-    OTLPClient->>OTelCol: POST http://otel-collector:4319/v1/logs (Bearer token)
-    Note over OTelCol,Normalizer: 3. Telemetry Governance: transform/governance restricts attributes
-    OTelCol->>Normalizer: POST http://normalizer:8080/v1/logs (otlp_http/normalizer)
-    Note over Normalizer,Queue: 4. Unified Schema Normalization & Storage
-    alt Unhappy: Malformed Attributes (regex hexID, digestID fail)
-        Normalizer-->>OTelCol: 400 Bad Request ("invalid evidence")
-    else Happy: Map to UnifiedFinding & Store
-        Normalizer->>Queue: INSERT INTO normalization_queue
-        alt Queue Full (> 100,000 records)
-            Normalizer-->>OTelCol: 503 Service Unavailable ("queue capacity")
-        else Queued Successfully
-            Normalizer-->>OTelCol: 200 OK ({})
-        end
+    Note over Gateway,OTelCol: 1. Native Telemetry Export (GenAI Spans, Tokens, Dollar Cost)
+    Gateway->>OTelCol: Export OTLP Traces & Spans (POST :4318/v1/traces)
+    Note over OTelCol: 2. Privacy & Governance Processing: keep_keys extracts cost, tokens, models
+    Note over OTelCol,Normalizer: 3. Dual Pipeline Export: Jaeger and HTTP Normalizer
+    OTelCol->>Normalizer: POST http://normalizer:8080/v1/traces (Bearer Token)
+    Note over Normalizer,Queue: 4. SPIFFE Identity Enrichment & Schema Transformation
+    Normalizer->>Normalizer: Extract model, tokens, cost from span attributes
+    Normalizer->>Normalizer: Append SPIFFE ID: spiffe://loom.local/workload/<workload>
+    Normalizer->>Normalizer: Map to UnifiedFinding (finding_type: "audit_finding", service: "loom")
+    Normalizer->>Queue: INSERT INTO normalization_queue (id, tenant, finding)
+    alt Queue Full (> 100,000 records)
+        Normalizer-->>OTelCol: 503 Service Unavailable ("queue capacity")
+    else Queued Successfully
+        Normalizer-->>OTelCol: 200 OK ({})
     end
     Note over Auditor,Normalizer: 5. Audit Evidence Retrieval
     Auditor->>Normalizer: GET /findings (Bearer token)
@@ -232,7 +204,7 @@ sequenceDiagram
         Normalizer-->>Auditor: 403 Forbidden ("denied")
     else Authorized Auditor Query
         Normalizer->>Queue: SELECT finding FROM normalization_queue LIMIT 100
-        Normalizer-->>Auditor: 200 OK (UnifiedFinding list)
+        Normalizer-->>Auditor: 200 OK (UnifiedFinding list with SPIFFE attestation)
     end
 ```
 
@@ -250,27 +222,27 @@ sequenceDiagram
     participant Planner as Agent: Planner<br/>(strands-planner)
     participant Operator as Agent: Operator<br/>(strands-operator)
     participant Publisher as Agent: Publisher<br/>(strands-publisher)
-    participant ControlPlane as Control Plane<br/>(Policy & Boundary)
+    participant Gateway as AgentGateway & ExtAuthz<br/>(Edge & Deep Validation)
 
     User->>Researcher: Start Task (User prompt)
     Note over Researcher: Allowed: read_text_file | Denied: list_directory, writes, models
-    Researcher->>ControlPlane: POST /mcp (read_text_file "/workspace/data.txt")
-    ControlPlane-->>Researcher: File content (Wrapped in DataContext(trust="untrusted", tainted=true))
+    Researcher->>Gateway: POST /mcp (read_text_file "/workspace/data.txt")
+    Gateway-->>Researcher: File content (Wrapped in DataContext(trust="untrusted", tainted=true))
     Researcher->>Planner: Handoff Proposal (Context JSON with lineage parents)
     Note over Planner: Allowed: LLM reasoning | Denied: ALL filesystem tools
     alt Unhappy: Privilege Escalation Attempt
-        Planner->>ControlPlane: POST /mcp (read_text_file "/workspace/secret.key")
-        ControlPlane-->>Planner: 403 Forbidden ("Policy denied: tool_not_granted")
+        Planner->>Gateway: POST /mcp (read_text_file "/workspace/secret.key")
+        Gateway-->>Planner: 403 Forbidden ("Tool capability denied by policy")
     end
     Planner->>Operator: Handoff Execution Plan (Preserving taint lineage)
     Note over Operator: Allowed: list_directory | Denied: read_text_file, writes
-    Operator->>ControlPlane: POST /mcp (list_directory "/workspace")
-    ControlPlane-->>Operator: 200 OK (Directory entries)
+    Operator->>Gateway: POST /mcp (list_directory "/workspace")
+    Gateway-->>Operator: 200 OK (Directory entries)
     Operator->>Publisher: Handoff Results Summary
     Note over Publisher: Allowed: model synthesis | Denied: external network export, filesystem
     alt Unhappy: Taint Cleansing / Lineage Forgery Attempt
         Publisher->>Publisher: Attempt to set DataContext(tainted=false, trust="trusted")
-        Note over Publisher: Control plane re-evaluates all incoming data as untrusted.<br/>Local assertions cannot elevate authority.
+        Note over Publisher: Gateway & ExtAuthz re-evaluate all incoming data as untrusted.<br/>Local assertions cannot elevate authority.
     end
     Publisher->>User: Formatted Final Report (with immutable provenance trail)
 ```
@@ -281,12 +253,11 @@ sequenceDiagram
 
 | Boundary / Layer | Happy Path Guarantee | Unhappy Path Defense | Enforcing Component |
 | :--- | :--- | :--- | :--- |
-| **Authentication** | Valid token/SVID resolves to verified `IdentityContext` | Missing/expired/tampered credentials fail closed with 401 | `Registry`, `OIDC`, `WorkloadAuth` |
-| **Policy** | Explicit versioned allow rules match principal & tool | Default-deny on all ungranted models, tools, or resources (403) | `security.Policy` |
-| **Execution Budgets** | Admitted operations tracked against session limits | 429 Too Many Requests on RPM, token, call, or concurrency breach | `security.Budgets` |
-| **Circuit Breakers** | Fast passthrough during healthy upstream operation | 503 Service Unavailable when 3 upstream failures occur (30s cooldown) | `security.Circuit` |
-| **Content Inspection** | Clean prompts and completions pass with correlation headers | 403 on PII detection or disallowed destructive/injection commands | `guardrail-proxy`, `pii.Scrubber` |
-| **MCP Validation** | Offline signed tool contracts execute with validated schema | Rejection on schema mutation, tool poisoning, or prompt injection | `MCPInterceptorMiddleware` |
-| **Filesystem (SafeFS)** | Regular file reads constrained under `/workspace` | `O_NOFOLLOW` descriptor-relative resolution blocks traversal & symlinks | `docker/safefs/` |
+| **Perimeter Identity** | Dex OIDC JWT validated against JWKS | Missing/expired/tampered tokens or bad claims rejected with 401/403 | `AgentGateway` (`jwtAuth`, CEL `authorization`) |
+| **Execution Rate & Budgets** | Admitted operations tracked against token & dollar limits | 429 Too Many Requests on RPM breach (60 RPM) or dollar budget breach ($50/day) | `AgentGateway` (`localRateLimit`, `apiKey.budgets`, `modelCatalog`) |
+| **Tool Allowlisting** | Tool calls matched against allowlist | Unregistered capabilities blocked immediately at edge (403) | `AgentGateway` (CEL `mcpAuthorization`) |
+| **Deep Schema & Contract** | Offline signed `tool_contract.json` verified with Ed25519 | Rejection on schema mutation, unregistered tool, or missing arguments (403) | `ExtAuthzServer` (`control-plane:9001`) |
+| **Path Traversal & Injection** | Regular file reads constrained strictly to `/workspace` | Blocks `..`, `\`, control chars, and prompt injection markers (403) | `ExtAuthzServer` (`control-plane:9001`) |
+| **Content Inspection** | Clean prompts and completions pass with correlation headers | 403 on PII detection or disallowed destructive/injection patterns | `guardrail-proxy`, `pii.Scrubber` |
 | **Zero-Trust Identity** | Short-lived SVIDs (< 10m) enable cryptographic mTLS A2A | Non-mTLS, expired certs, or unlisted SPIFFE IDs rejected | SPIFFE/SPIRE, `SVIDMiddleware` |
-| **Audit & Governance** | OTel events normalized into unified compliance finding schema | Tampered telemetry rejected (400), audit queue bounded at 100k (503) | `OTelCollector`, `Normalizer` |
+| **Audit & Normalization** | OTel traces normalized with SPIFFE workload identity | Normalizer enriches spans with `spiffe_id` and outputs `UnifiedFinding` | `OTelCollector`, `normalizer.go` |

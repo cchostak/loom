@@ -29,12 +29,48 @@ type Rule struct {
 	Outcome        string `json:"outcome"`
 }
 
+type BudgetPolicy struct {
+	DailyDollarBudget struct {
+		Limit    float64 `json:"limit"`
+		Currency string  `json:"currency"`
+		Window   string  `json:"window"`
+		Action   string  `json:"action"`
+	} `json:"daily_dollar_budget,omitempty"`
+	HourlyTokenBudget struct {
+		Limit  int    `json:"limit"`
+		Window string `json:"window"`
+		Action string `json:"action"`
+	} `json:"hourly_token_budget,omitempty"`
+	RateLimitRPM  int `json:"rate_limit_rpm,omitempty"`
+	MaxConcurrent int `json:"max_concurrent,omitempty"`
+}
+
+type DexJWTPolicy struct {
+	Issuer         string   `json:"issuer,omitempty"`
+	Audiences      []string `json:"audiences,omitempty"`
+	RequiredClaims []string `json:"required_claims,omitempty"`
+}
+
+type CELPolicies struct {
+	JWTValidation     []string `json:"jwt_validation,omitempty"`
+	ToolAuthorization []string `json:"tool_authorization,omitempty"`
+	BudgetLimits      []string `json:"budget_limits,omitempty"`
+}
+
+type ModelCatalogPolicy struct {
+	Providers map[string]any `json:"providers,omitempty"`
+}
+
 type Policy struct {
-	ID            string   `json:"id"`
-	Version       string   `json:"version"`
-	EmergencyDeny bool     `json:"emergency_deny"`
-	Disabled      []string `json:"disabled"`
-	Rules         []Rule   `json:"rules"`
+	ID            string              `json:"id"`
+	Version       string              `json:"version"`
+	EmergencyDeny bool                `json:"emergency_deny"`
+	Disabled      []string            `json:"disabled"`
+	Rules         []Rule              `json:"rules"`
+	Budgets       *BudgetPolicy       `json:"budgets,omitempty"`
+	DexJWT        *DexJWTPolicy       `json:"dex_jwt,omitempty"`
+	CELPolicies   *CELPolicies        `json:"cel_policies,omitempty"`
+	ModelCatalog  *ModelCatalogPolicy `json:"model_catalog,omitempty"`
 }
 
 // Decode rejects unknown fields, trailing data and null envelopes.

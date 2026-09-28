@@ -46,17 +46,13 @@ func TestConfigureIdentityOnlyMode(t *testing.T) {
 
 	auditBuf := &strings.Builder{}
 	s := &boundary.Server{
-		Auth:       security.Registry{File: "/dev/null", Audience: "loom-local"},
+		Auth:       security.GatewayAuth{Audience: "loom-local"},
 		PolicyFile: "/dev/null",
 		Audit:      &security.Audit{Writer: auditBuf},
-		Budgets: &security.Budgets{Limits: security.Limits{
-			RequestsPerMinute: 60, Calls: 500, Concurrent: 4,
-			InputBytes: 65536, OutputTokens: 4096, Workflow: time.Hour,
-		}},
-		Client:   &http.Client{Timeout: 5 * time.Second},
-		ModelURL: "http://agentgateway:8080",
-		MCPURL:   "http://agentgateway:3000",
-		GuardURL: "http://guardrail-proxy:9090",
+		Client:     &http.Client{Timeout: 5 * time.Second},
+		ModelURL:   "http://agentgateway:8080",
+		MCPURL:     "http://agentgateway:3000",
+		GuardURL:   "http://guardrail-proxy:9090",
 	}
 
 	handler, err := Configure(s, path)
@@ -72,8 +68,8 @@ func TestConfigureIdentityOnlyMode(t *testing.T) {
 	if s.Dispatch != nil {
 		t.Error("identity-only mode must not set Dispatch")
 	}
-	if _, ok := s.Auth.(*security.OIDC); !ok {
-		t.Errorf("expected *security.OIDC auth, got %T", s.Auth)
+	if _, ok := s.Auth.(*OIDCAuth); !ok {
+		t.Errorf("expected *OIDCAuth auth, got %T", s.Auth)
 	}
 	if s.ResourceURL != "http://control-plane:8080" {
 		t.Errorf("unexpected ResourceURL: %q", s.ResourceURL)
@@ -110,10 +106,9 @@ func TestConfigureIdentityOnlyRejectsPartialRemote(t *testing.T) {
 
 	auditBuf := &strings.Builder{}
 	s := &boundary.Server{
-		Auth:       security.Registry{},
+		Auth:       security.GatewayAuth{},
 		PolicyFile: "/dev/null",
 		Audit:      &security.Audit{Writer: auditBuf},
-		Budgets:    &security.Budgets{},
 		Client:     &http.Client{},
 	}
 	_, err := Configure(s, path)
@@ -148,10 +143,9 @@ func TestConfigureIdentityOnlyMetadata(t *testing.T) {
 
 	auditBuf := &strings.Builder{}
 	s := &boundary.Server{
-		Auth:       security.Registry{},
+		Auth:       security.GatewayAuth{},
 		PolicyFile: "/dev/null",
 		Audit:      &security.Audit{Writer: auditBuf},
-		Budgets:    &security.Budgets{},
 		Client:     &http.Client{},
 	}
 	handler, err := Configure(s, path)

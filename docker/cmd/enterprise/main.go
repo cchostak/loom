@@ -3,17 +3,12 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	rl "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 	"guardrail-proxy/enterprise"
 	"guardrail-proxy/security"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -77,30 +72,6 @@ func main() {
 		handler = enterprise.Connector{Store: store, State: enterprise.Remote{URL: required("LOOM_STATE_URL"), Token: key("LOOM_STATE_TOKEN_FILE")}, Audit: audit, Client: client, URL: required("LOOM_PROVIDER_URL"), ProviderKey: key("LOOM_PROVIDER_KEY_FILE")}
 	} else {
 		handler = enterprise.Service{Store: store, Token: key("LOOM_SERVICE_TOKEN_FILE"), Mode: mode}
-		if mode == "state" {
-			if value := os.Getenv("LOOM_RATE_LIMIT"); value != "" {
-				n, err := strconv.Atoi(value)
-				if err != nil || n < 1 {
-					log.Fatal("Invalid rate limit")
-				}
-				store.Rate = n
-			}
-			listener, err := net.Listen("tcp", ":8081")
-			if err != nil {
-				log.Fatal("Quota listener unavailable")
-			}
-			options := []grpc.ServerOption{grpc.MaxRecvMsgSize(65536)}
-			if workload != nil {
-				options = append(options, grpc.Creds(credentials.NewTLS(workload.ServerTLS())))
-			}
-			rpc := grpc.NewServer(options...)
-			rl.RegisterRateLimitServiceServer(rpc, &enterprise.RateLimit{Store: store})
-			go func() {
-				if rpc.Serve(listener) != nil {
-					log.Fatal("Quota server unavailable")
-				}
-			}()
-		}
 	}
 	server := &http.Server{Addr: ":8080", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 35 * time.Second, MaxHeaderBytes: 32768}
 	log.Fatal(security.ServeWorkload(server, workload))

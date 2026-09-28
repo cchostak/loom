@@ -17,52 +17,43 @@ Compose. These findings motivated the changes below.
 
 | Interface / implementation | Enforcement and threat addressed |
 | --- | --- |
-| `IdentityContext`, `Authenticator`, `Registry` | Local opaque bearer credentials resolve to fixed principal, workload, tenant, session and scopes. Registry expiry/audience checked on every request; removal revokes new requests. Inbound identity headers confer no authority and credentials are not forwarded. This is local authentication, not an OAuth implementation. |
+| `AgentGateway Edge Policy`, `jwtAuth`, `Dex IdP` | Edge JWT validation and Common Expression Language (CEL) claim verification directly at the perimeter (`jwt.claims["iss"] == "https://dex.loom.local" && jwt.sub != ""`). Validates audience and expiry at the edge before any backend service invocation. |
 | `ActionRequest`, `boundary.Parse` | Strict text-only model and MCP schemas, normalized reserialization, explicit resource/destination/side-effect context. Unknown actions/arguments, traversal, streaming and unsupported recursive/delegation methods deny before dispatch. |
 | `DataContext`, `Derived` | Source/producer/origin/trust/sensitivity/taint/integrity/parent representation; transforms preserve taint/classification and clear obsolete integrity. Ingress and MCP results remain untrusted. Persistent RAG lineage is not yet enforced. |
 | `Policy`, `PolicyDecision` | Versioned JSON grants match principal/workload/tenant/scope/action/resource/destination/trust/classification/side effects. Default deny; policy errors deny. Decisions have random IDs, rule/version, reason, obligations and expiry. `require_approval` denies dispatch until a future executor supports approval. |
 | `safefs.Open`, `Execute`, `Serve` | Linux descriptor-relative opens use `O_NOFOLLOW` at every path component. Only regular text files and bounded directory listings; no write, shell or network tools. This protects actual execution from traversal and symlink replacement, not just path validation. |
 | `Detector` and guardrail handlers | Replaceable sensitive-data detector contract; Presidio/known-secret detection and inexpensive string checks. Missing/bad/slow detector results reject. Detected PII is rejected, not falsely described as removed from forwarded content. Encoded JSON strings and extension fields are inspected. |
 | `SecurityEvent`, `Audit` | Intent and result events correlate policy and execution with server-generated IDs/W3C trace context. Identity and action digest are retained; bodies, arguments, credentials and raw upstream errors are excluded. File events are synced; failed intent writes prevent dispatch. At 100 MiB the local file stops accepting events/dispatch until operator maintenance. |
-| `Budgets`, `Circuit` | Per-credential-session rate, operation count, concurrency, input/output-token bounds and workflow age; 30-second request deadline and bounded responses. Three upstream failures open a model/tool circuit for 30 seconds. No client-supplied session can reset quota. State remains process-local. |
+| `AgentGateway Budgets`, `ExtAuthz` | Edge rate limiting (60 RPM, 100k tokens/hr) and dollar spend tracking ($50/day block) natively enforced by AgentGateway via `modelCatalog` and database. Deep MCP contract verification, path traversal checks, and Ed25519 cryptographic sealing are offloaded to a dedicated gRPC ExtAuthz service (`:9001`). |
 | `Approvals` | Backend-only HMAC contract binds exact serialized action, identity, resource, destination, arguments, effects, decision, policy version and expiry; consumption is one-time within the process. No issuer API, signing key provisioning or privileged executor is enabled. Operator authentication and durable replay prevention remain required. |
 
-Additional invariants: only the boundary publishes AI APIs; IDE and raw gateway
+Additional invariants: AgentGateway acts as the primary perimeter trust broker; IDE and raw gateway
 have no shared network; filesystem subprocess starts with an empty environment;
 MCP mounts and core root filesystems are read-only; capabilities are dropped;
 container CPU/memory/PID/file-descriptor/log sizes are bounded. The IDE retains a
 writable home but receives no sudo password. All host ports bind to loopback.
 
-The collector removes span/resource/scope/event attributes, names, status text,
-trace state and links before export, and has no raw-log/debug exporter. The
-`ottl.set.allowNil` feature gate is needed to clear links in the pinned collector.
-Tracing outages do not authorize requests or prevent unrelated safe operations.
-Jaeger is not the security audit log.
+The collector routes trace spans and costs to the Normalizer service, preserving
+`gen_ai` model and cost attributes while sanitizing raw inputs. Tracing outages do
+not authorize requests or prevent unrelated safe operations.
 
 ## Changed surfaces
 
-* `docker/security/`: context, policy, credentials, audit, approval, budget and
-  circuit contracts and tests. `config/policy.json`: initial local grants.
-* `docker/boundary/`, `docker/cmd/control-plane/`, `docker/Dockerfile.control`:
-  authenticated mediation, schema validation, inspection and bounded dispatch.
-* `docker/safefs/`, `docker/cmd/filesystem/`, gateway Dockerfile/config:
-  small stdio MCP adapter replaces Node/npm; second CEL allowlist retained.
-* `docker/main.go`, `handlers.go`, `detectors.go`, `pii/`, `swarm/client.go`:
-  split handlers, fail-closed sensitive-data checks, bounded dependency responses
-  and malformed-action rejection. The original inexpensive content detector stays.
-* Compose, isolation override and collector config: explicit networks, loopback
-  publishing, non-root users, mounts, limits and telemetry suppression. Presidio's
-  original invalid config path/port were corrected against the pinned image.
-* `pipeline/`: guardrail/PII failures no longer promote unchecked documents;
-  scoped pipeline credential for model calls; unprivileged runtime/storage.
-* `.github/`: SHA-pinned Actions, reduced permissions, dependency/workflow review,
-  blocking HIGH/CRITICAL filesystem/image vulnerability scans, OCI SBOM and
-  provenance metadata. Core image bases and analyzer/collector/Jaeger are pinned
-  by digest; IDE/pipeline dependency modernization remains separate work.
-* `scripts/`, tests, Makefile and `.env.example`: generated expiring local
-  credentials, safe example, keyless real-runtime regression commands.
-* README, SECURITY, ADR 0002, swarm docs, threat model and roadmap: corrected
-  claims, migration steps, test distinctions and explicit production gaps.
+* `config/agentgateway-config.yaml` & `config/policy.json`: native Dex JWT authentication,
+  CEL authorization claim rules, native model catalog pricing, virtual key budgets,
+  and local rate limits.
+* `docker/security/mcp_signature.go`: dedicated gRPC ExtAuthz service implementing
+  `envoy.service.auth.v3.Authorization` for deep JSON schema, path traversal, injection
+  detection, and Ed25519 contract verification.
+* `docker/security/`: deprecated redundant custom middleware (`budget.go`, `circuit.go`,
+  `oidc.go`, `auth.go`) stripped and deleted.
+* `docker/enterprise/`: deprecated `ratelimit.go` deleted; `normalizer.go` updated to
+  consume OTel trace spans (`/v1/traces`), append SPIFFE workload identity, and output
+  unified governance finding records.
+* `integrations/governance/unified-finding.schema.json`: enriched `AffectedResource` with
+  optional `spiffe_id`.
+* `docs/`: ADR 0005, sequence diagrams, threat model, and security implementation updated
+  to reflect AgentGateway as the primary perimeter broker.
 
 ## Test evidence
 

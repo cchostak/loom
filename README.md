@@ -69,7 +69,7 @@ flowchart LR
 
 - **Visual Architecture**: See [Sequence Diagrams](docs/sequence-diagrams.md) for happy/unhappy execution flows.
 - **Threat & Tooling Matrix**: See [Problem & Mitigation Matrix](SECURITY_MATRIX.md) for threat-to-tool mapping.
-- **Enterprise Task Backlog**: See [Implementation Tasks](epics/tasks/1.md) for enterprise deployment tasks with Definitions of Done.
+- **Enterprise Task Backlog**: See [Implementation Epics & Tasks](epics/README.md) for enterprise deployment tasks with Definitions of Done.
 
 Policy matches principal, workload, tenant, scope, method, tool/model, resource,
 destination, trust and sensitivity. The local registry assigns session identity;
@@ -104,7 +104,7 @@ Every architectural edge in Loom can be executed and verified via `make`:
 | **Strands Multi-Agent Swarm** | `make strands-lab` | `make strands-test` (Role credentials, taint lineage) |
 | **Adversarial Swarm Lab** | `make lab` | `make lab-json` (Emits machine-readable score report) |
 | **Ingestion Pipeline & RAG** | `make pipeline` | `make pipeline-rag` (Medallion bronze/silver/gold + RAG) |
-| **Compliance Telemetry** | `make test-telemetry`| Validates OTel normalization to BlackShield schema |
+| **Compliance Telemetry** | `make test-telemetry`| Validates OTel normalization to unified finding schema |
 | **Environment & Tool Health**| `make doctor` | `make check` (Linter, compose config, go vet) |
 
 ## Production boundary

@@ -162,6 +162,19 @@
           ],
           "default": null,
           "title": "Host Count"
+        },
+        "spiffe_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SPIFFE/SPIRE Workload Identity URI, e.g. spiffe://loom.local/workload/strands-agent",
+          "title": "Spiffe Id"
         }
       },
       "required": [

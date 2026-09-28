@@ -61,6 +61,11 @@ def verify_response(response, request_body, session):
         raise LoomFailure('MCP response authentication failed') from None
 
 
+def verify_extauthz_attestation(headers: dict) -> bool:
+    """Verify that request/response cleared AgentGateway edge policy and ExtAuthz deep validation."""
+    return headers.get('x-loom-mcp-validated') == 'true'
+
+
 def validate_request(message, tools):
     """Reject unexpected capabilities and arguments before sending an invocation."""
     if message.get('method') != 'tools/call':

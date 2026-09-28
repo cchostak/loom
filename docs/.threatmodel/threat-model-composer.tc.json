@@ -1,0 +1,1425 @@
+{
+  "schema": 1,
+  "applicationInfo": {
+    "name": "Threat Model Export",
+    "description": "Loom is an enterprise-grade AI security gateway, Model Context Protocol (MCP) containment boundary, and multi-agent governance platform providing zero-trust edge authentication, deep schema and cryptographic validation, and telemetry compliance normalization."
+  },
+  "architecture": {
+    "description": ""
+  },
+  "dataflow": {
+    "description": ""
+  },
+  "assumptions": [],
+  "mitigations": [
+    {
+      "id": "M001",
+      "numericId": 1,
+      "status": "mitigationResolved",
+      "content": "ExtAuthz Pre-execution Delimiter Neutralization & Prompt Injection Marker Scanning",
+      "displayOrder": 1,
+      "metadata": []
+    },
+    {
+      "id": "M002",
+      "numericId": 2,
+      "status": "mitigationResolved",
+      "content": "Ed25519 Publisher Cryptographic Contract Signing and Boot Verification",
+      "displayOrder": 2,
+      "metadata": []
+    },
+    {
+      "id": "M003",
+      "numericId": 3,
+      "status": "mitigationResolved",
+      "content": "Kernel-Level Descriptor-Relative Sandboxing (openat, O_NOFOLLOW) in SafeFS",
+      "displayOrder": 3,
+      "metadata": []
+    },
+    {
+      "id": "M004",
+      "numericId": 4,
+      "status": "mitigationResolved",
+      "content": "Bidirectional Presidio PII Masking and Deterministic Secret Scrubbing",
+      "displayOrder": 4,
+      "metadata": []
+    },
+    {
+      "id": "M005",
+      "numericId": 5,
+      "status": "mitigationResolved",
+      "content": "Durable Dollar Budgets ($50/day block) and Upstream Circuit Breakers",
+      "displayOrder": 5,
+      "metadata": []
+    },
+    {
+      "id": "M006",
+      "numericId": 6,
+      "status": "mitigationResolved",
+      "content": "Mandatory Document-Level Security (DLS) Pre-Filtering in Vector Search",
+      "displayOrder": 6,
+      "metadata": []
+    },
+    {
+      "id": "M007",
+      "numericId": 7,
+      "status": "mitigationResolved",
+      "content": "Cryptographically Hash-Chained Audit Ledger in Normalizer Service",
+      "displayOrder": 7,
+      "metadata": []
+    },
+    {
+      "id": "M008",
+      "numericId": 8,
+      "status": "mitigationResolved",
+      "content": "Zero-Trust SPIFFE/SPIRE Workload Identity with Ephemeral X.509 SVIDs and mTLS",
+      "displayOrder": 8,
+      "metadata": []
+    }
+  ],
+  "assumptionLinks": [],
+  "mitigationLinks": [
+    {
+      "linkedId": "T001",
+      "mitigationId": "M001"
+    },
+    {
+      "linkedId": "T002",
+      "mitigationId": "M002"
+    },
+    {
+      "linkedId": "T003",
+      "mitigationId": "M003"
+    },
+    {
+      "linkedId": "T004",
+      "mitigationId": "M004"
+    },
+    {
+      "linkedId": "T005",
+      "mitigationId": "M005"
+    },
+    {
+      "linkedId": "T006",
+      "mitigationId": "M006"
+    },
+    {
+      "linkedId": "T007",
+      "mitigationId": "M007"
+    },
+    {
+      "linkedId": "T008",
+      "mitigationId": "M008"
+    }
+  ],
+  "threats": [
+    {
+      "id": "T001",
+      "numericId": 1,
+      "threatSource": "External Adversary / Malicious User",
+      "prerequisites": "Ability to submit text prompts to AI model or tools",
+      "threatAction": "Crafts adversarial delimiters or role-play framing to override system instructions and invoke unauthorized tools.",
+      "threatImpact": "Unauthorized execution of administrative tools, data exfiltration, and compromise of agent autonomy.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A001"
+      ],
+      "statement": "A External Adversary / Malicious User Ability to submit text prompts to AI model or tools can Crafts adversarial delimiters or role-play framing to override system instructions and invoke unauthorized tools., which leads to Unauthorized execution of administrative tools, data exfiltration, and compromise of agent autonomy.",
+      "displayOrder": 1,
+      "status": "threatResolved",
+      "tags": [
+        "OWASP-LLM01",
+        "Prompt-Injection"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T002",
+      "numericId": 2,
+      "threatSource": "Malicious Insider or Compromised CI Build",
+      "prerequisites": "Write access to deployment configuration or tool_contract.json file",
+      "threatAction": "Modifies tool descriptions or injects unauthorized tool capabilities without valid cryptographic publisher signature.",
+      "threatImpact": "Agent invokes weaponized tools resulting in remote code execution or unauthorized system modification.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A002"
+      ],
+      "statement": "A Malicious Insider or Compromised CI Build Write access to deployment configuration or tool_contract.json file can Modifies tool descriptions or injects unauthorized tool capabilities without valid cryptographic publisher signature., which leads to Agent invokes weaponized tools resulting in remote code execution or unauthorized system modification.",
+      "displayOrder": 2,
+      "status": "threatResolved",
+      "tags": [
+        "OWASP-LLM08",
+        "Tool-Poisoning"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T003",
+      "numericId": 3,
+      "threatSource": "Adversary exploiting MCP SafeFS tool parameters",
+      "prerequisites": "Ability to call read_text_file or write_file tool endpoints",
+      "threatAction": "Passes relative traversal paths or creates race-condition symlinks to escape the /workspace sandbox.",
+      "threatImpact": "Arbitrary file read/write on host container root filesystem, leaking private keys and environment variables.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A002"
+      ],
+      "statement": "A Adversary exploiting MCP SafeFS tool parameters Ability to call read_text_file or write_file tool endpoints can Passes relative traversal paths or creates race-condition symlinks to escape the /workspace sandbox., which leads to Arbitrary file read/write on host container root filesystem, leaking private keys and environment variables.",
+      "displayOrder": 3,
+      "status": "threatResolved",
+      "tags": [
+        "CWE-22",
+        "CWE-59",
+        "Path-Traversal"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T004",
+      "numericId": 4,
+      "threatSource": "Negligent Internal User or Hallucinating Model",
+      "prerequisites": "Submitting proprietary corporate records or PII into prompt input",
+      "threatAction": "Transmits unredacted credit cards, SSNs, or cloud credentials to external public LLM provider, or model regurgitates confidential data.",
+      "threatImpact": "Regulatory compliance violations (GDPR, PCI-DSS), confidential data leaks, and intellectual property theft.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A001"
+      ],
+      "statement": "A Negligent Internal User or Hallucinating Model Submitting proprietary corporate records or PII into prompt input can Transmits unredacted credit cards, SSNs, or cloud credentials to external public LLM provider, or model regurgitates confidential data., which leads to Regulatory compliance violations (GDPR, PCI-DSS), confidential data leaks, and intellectual property theft.",
+      "displayOrder": 4,
+      "status": "threatResolved",
+      "tags": [
+        "OWASP-LLM06",
+        "PII-Leakage",
+        "DLP"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T005",
+      "numericId": 5,
+      "threatSource": "Recursive Agent Execution Loop or Malicious DoS Attacker",
+      "prerequisites": "Access to trigger multi-agent swarm workflows",
+      "threatAction": "Spawns unbounded recursive tool calls or sends flooding prompts that exhaust cloud LLM API tokens and daily dollar spending limits.",
+      "threatImpact": "Financial loss through runaway cloud API bills, service outage for legitimate enterprise tenants.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A004"
+      ],
+      "statement": "A Recursive Agent Execution Loop or Malicious DoS Attacker Access to trigger multi-agent swarm workflows can Spawns unbounded recursive tool calls or sends flooding prompts that exhaust cloud LLM API tokens and daily dollar spending limits., which leads to Financial loss through runaway cloud API bills, service outage for legitimate enterprise tenants.",
+      "displayOrder": 5,
+      "status": "threatResolved",
+      "tags": [
+        "OWASP-LLM04",
+        "Denial-of-Wallet",
+        "FinOps"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T006",
+      "numericId": 6,
+      "threatSource": "Malicious Tenant User in Multi-Tenant Environment",
+      "prerequisites": "Ability to execute RAG semantic search queries",
+      "threatAction": "Submits crafted semantic queries that retrieve adjacent tenant vector embeddings due to missing pre-filtering or stale ACLs.",
+      "threatImpact": "Confidential cross-organizational data leakage, violation of multi-tenant security isolation.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A005"
+      ],
+      "statement": "A Malicious Tenant User in Multi-Tenant Environment Ability to execute RAG semantic search queries can Submits crafted semantic queries that retrieve adjacent tenant vector embeddings due to missing pre-filtering or stale ACLs., which leads to Confidential cross-organizational data leakage, violation of multi-tenant security isolation.",
+      "displayOrder": 6,
+      "status": "threatResolved",
+      "tags": [
+        "RAG",
+        "Vector-DLS",
+        "Multi-Tenancy"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T007",
+      "numericId": 7,
+      "threatSource": "Privileged Malicious Insider or Compromised Host",
+      "prerequisites": "Database access to audit log storage",
+      "threatAction": "Modifies or deletes audit finding records to conceal policy violations or unauthorized tool invocations.",
+      "threatImpact": "Loss of audit non-repudiation, failed regulatory compliance audits (SOC 2, ISO 27001).",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A003"
+      ],
+      "statement": "A Privileged Malicious Insider or Compromised Host Database access to audit log storage can Modifies or deletes audit finding records to conceal policy violations or unauthorized tool invocations., which leads to Loss of audit non-repudiation, failed regulatory compliance audits (SOC 2, ISO 27001).",
+      "displayOrder": 7,
+      "status": "threatResolved",
+      "tags": [
+        "Audit-Ledger",
+        "Non-Repudiation",
+        "Compliance"
+      ],
+      "metadata": []
+    },
+    {
+      "id": "T008",
+      "numericId": 8,
+      "threatSource": "Compromised Container Worker in Bridge Network",
+      "prerequisites": "Compromised single container workload",
+      "threatAction": "Probes adjacent internal microservices over Docker bridge network without presenting cryptographic workload identity.",
+      "threatImpact": "Privilege escalation and unauthorized access to control plane and database services.",
+      "impactedGoal": [],
+      "impactedAssets": [
+        "A002",
+        "A003",
+        "A004"
+      ],
+      "statement": "A Compromised Container Worker in Bridge Network Compromised single container workload can Probes adjacent internal microservices over Docker bridge network without presenting cryptographic workload identity., which leads to Privilege escalation and unauthorized access to control plane and database services.",
+      "displayOrder": 8,
+      "status": "threatResolved",
+      "tags": [
+        "Zero-Trust",
+        "SPIFFE",
+        "mTLS"
+      ],
+      "metadata": []
+    }
+  ],
+  "businessContext": {
+    "description": "Loom is an enterprise-grade AI security gateway, Model Context Protocol (MCP) containment boundary, and multi-agent governance platform providing zero-trust edge authentication, deep schema and cryptographic validation, and telemetry compliance normalization.",
+    "features": {
+      "industry_sector": "Technology",
+      "sensitivity_tier": "Confidential",
+      "user_base_size": "Large",
+      "geographic_scope": "Global / Transboundary",
+      "regulatory_requirements": [
+        "CCPA / CPRA",
+        "SOX",
+        "GDPR"
+      ],
+      "system_criticality": "High",
+      "financial_impact": "High",
+      "authentication_requirement": "Federated",
+      "deployment_model": "Hybrid cloud",
+      "user_base_metric": "Organizational customers",
+      "revenue_band": "Enterprise",
+      "geographic_profile": {
+        "data_residency": "Global / Transboundary",
+        "compute_location": "Multi-Continental / International",
+        "user_base_location": "Global / Transboundary",
+        "organizational_headquarters": "National / Single-Country"
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "C001",
+      "name": "AgentGateway",
+      "type": "Security",
+      "service_provider": "CNCF",
+      "specific_service": null,
+      "version": null,
+      "description": "Perimeter API gateway handling OIDC JWT claim verification, token rate limiting, dollar budgets, and initial CEL tool allowlisting.",
+      "configuration": null
+    },
+    {
+      "id": "C002",
+      "name": "ExtAuthzService",
+      "type": "Security",
+      "service_provider": "Hybrid",
+      "specific_service": null,
+      "version": null,
+      "description": "Control plane gRPC External Authorization server on port 9001 performing deep JSON schema validation, Ed25519 contract verification, path traversal checks, and prompt injection detection.",
+      "configuration": null
+    },
+    {
+      "id": "C003",
+      "name": "SafeFSServer",
+      "type": "Container",
+      "service_provider": "Hybrid",
+      "specific_service": null,
+      "version": null,
+      "description": "MCP SafeFS tool container running descriptor-relative openat filesystem operations with O_NOFOLLOW sandboxing under /workspace.",
+      "configuration": null
+    },
+    {
+      "id": "C004",
+      "name": "GuardrailProxy",
+      "type": "Security",
+      "service_provider": "Hybrid",
+      "specific_service": null,
+      "version": null,
+      "description": "Bidirectional DLP proxy evaluating prompts and completions with Presidio PII redaction and secret scanning.",
+      "configuration": null
+    },
+    {
+      "id": "C005",
+      "name": "OTelCollector",
+      "type": "Analytics",
+      "service_provider": "CNCF",
+      "specific_service": null,
+      "version": null,
+      "description": "OpenTelemetry Collector Contrib with OTTL privacy transforms stripping raw prompt text and preserving GenAI attributes.",
+      "configuration": null
+    },
+    {
+      "id": "C006",
+      "name": "NormalizerService",
+      "type": "Analytics",
+      "service_provider": "Hybrid",
+      "specific_service": null,
+      "version": null,
+      "description": "Telemetry normalization service ingesting OTel trace spans, injecting SPIFFE workload identity, and outputting UnifiedFinding audit records.",
+      "configuration": null
+    },
+    {
+      "id": "C007",
+      "name": "StrandsSwarmRunner",
+      "type": "Compute",
+      "service_provider": "Hybrid",
+      "specific_service": null,
+      "version": null,
+      "description": "Multi-agent swarm execution orchestrator running role-scoped agent tasks with ephemeral credentials and taint lineage.",
+      "configuration": null
+    },
+    {
+      "id": "C008",
+      "name": "ExternalLLMProvider",
+      "type": "Other",
+      "service_provider": "Other",
+      "specific_service": null,
+      "version": null,
+      "description": "Upstream frontier model APIs (OpenRouter, OpenAI, Anthropic) executing model inference.",
+      "configuration": null
+    }
+  ],
+  "connections": [
+    {
+      "id": "CN001",
+      "source_id": "C007",
+      "destination_id": "C001",
+      "protocol": "HTTPS",
+      "port": 8080,
+      "encryption": true,
+      "description": "Agent calls model and tools via gateway with Bearer JWT."
+    },
+    {
+      "id": "CN002",
+      "source_id": "C001",
+      "destination_id": "D001",
+      "protocol": "TCP",
+      "port": null,
+      "encryption": true,
+      "description": "Gateway queries and updates budget balances in SQLite."
+    },
+    {
+      "id": "CN003",
+      "source_id": "C001",
+      "destination_id": "C002",
+      "protocol": "gRPC",
+      "port": 9001,
+      "encryption": true,
+      "description": "Gateway delegates deep JSON schema, Ed25519 contract, and injection checks to ExtAuthz."
+    },
+    {
+      "id": "CN004",
+      "source_id": "C001",
+      "destination_id": "C003",
+      "protocol": "HTTPS",
+      "port": 8084,
+      "encryption": true,
+      "description": "Gateway forwards validated tool calls to SafeFS."
+    },
+    {
+      "id": "CN005",
+      "source_id": "C003",
+      "destination_id": "D003",
+      "protocol": "Other",
+      "port": null,
+      "encryption": true,
+      "description": "SafeFS accesses workspace files via descriptor-relative openat syscalls."
+    },
+    {
+      "id": "CN006",
+      "source_id": "C001",
+      "destination_id": "C004",
+      "protocol": "HTTPS",
+      "port": 8082,
+      "encryption": true,
+      "description": "Gateway forwards prompt text to Guardrail proxy for bidirectional PII/secret inspection."
+    },
+    {
+      "id": "CN007",
+      "source_id": "C004",
+      "destination_id": "C008",
+      "protocol": "HTTPS",
+      "port": 443,
+      "encryption": true,
+      "description": "Sanitized prompt sent to external LLM API for inference."
+    },
+    {
+      "id": "CN008",
+      "source_id": "C001",
+      "destination_id": "C005",
+      "protocol": "gRPC",
+      "port": 4317,
+      "encryption": true,
+      "description": "AgentGateway exports OTLP trace spans and metrics to collector."
+    },
+    {
+      "id": "CN009",
+      "source_id": "C005",
+      "destination_id": "C006",
+      "protocol": "HTTP",
+      "port": 8080,
+      "encryption": false,
+      "description": "OTel collector forwards privacy-scrubbed spans to Normalizer /v1/traces."
+    },
+    {
+      "id": "CN010",
+      "source_id": "C006",
+      "destination_id": "D002",
+      "protocol": "TCP",
+      "port": null,
+      "encryption": true,
+      "description": "Normalizer writes hash-chained UnifiedFinding records to SQLite queue."
+    },
+    {
+      "id": "CN011",
+      "source_id": "C007",
+      "destination_id": "D004",
+      "protocol": "HTTPS",
+      "port": 6333,
+      "encryption": true,
+      "description": "Agent executes pre-filtered vector search queries with tenant context."
+    }
+  ],
+  "dataStores": [
+    {
+      "id": "D001",
+      "name": "GatewayBudgetStore",
+      "type": "Relational",
+      "classification": "Internal",
+      "encryption_at_rest": true,
+      "backup_frequency": "Daily",
+      "description": "SQLite database storing persistent token and dollar budget counters for AgentGateway."
+    },
+    {
+      "id": "D002",
+      "name": "NormalizationFindingQueue",
+      "type": "Relational",
+      "classification": "Internal",
+      "encryption_at_rest": true,
+      "backup_frequency": "Daily",
+      "description": "Hash-chained SQLite database storing normalized UnifiedFinding records for compliance audits."
+    },
+    {
+      "id": "D003",
+      "name": "WorkspaceFileSystem",
+      "type": "File System",
+      "classification": "Confidential",
+      "encryption_at_rest": true,
+      "backup_frequency": "Daily",
+      "description": "Target workspace filesystem sandboxed by SafeFS at /workspace."
+    },
+    {
+      "id": "D004",
+      "name": "VectorStoreRAG",
+      "type": "NoSQL",
+      "classification": "Confidential",
+      "encryption_at_rest": true,
+      "backup_frequency": "Daily",
+      "description": "Vector database storing embedding chunks with Document-Level Security (DLS) ACL metadata."
+    }
+  ],
+  "threatActors": [
+    {
+      "id": "TA013",
+      "type": "External Attacker",
+      "name": "Adversarial Prompt Injector & Agent Hijacker",
+      "sophistication_tier": "Tier 3 - Organized cybercrime",
+      "motivations": [
+        "Competitive advantage",
+        "Financial gain",
+        "Espionage / intelligence collection"
+      ],
+      "resources": "Individual",
+      "description": "Attacker crafting direct and indirect prompt injections, jailbreaks, and poisoned tool calls to hijack autonomous swarms, exfiltrate confidential enterprise data, and trigger Denial of Wallet.",
+      "priority": 1,
+      "is_relevant": true,
+      "reviewed": true,
+      "relationship_to_target": "External",
+      "state_nexus": "None",
+      "targeting_specificity": "Sector-focused"
+    }
+  ],
+  "trustZones": [
+    {
+      "id": "TZ001",
+      "name": "ExternalUntrustedZone",
+      "trust_level": "Untrusted",
+      "contained_nodes": [
+        "C008"
+      ],
+      "description": "External upstream LLM providers and public internet services."
+    },
+    {
+      "id": "TZ002",
+      "name": "PerimeterDMZZone",
+      "trust_level": "Low",
+      "contained_nodes": [
+        "C001",
+        "D001"
+      ],
+      "description": "Perimeter API gateway handling client ingress, rate limiting, and dollar budget state."
+    },
+    {
+      "id": "TZ003",
+      "name": "ControlPlaneAndAuditZone",
+      "trust_level": "High",
+      "contained_nodes": [
+        "C002",
+        "C004",
+        "C005",
+        "C006",
+        "D002"
+      ],
+      "description": "Internal zero-trust control plane containing ExtAuthz, Guardrail proxy, OTel collector, and audit ledger."
+    },
+    {
+      "id": "TZ004",
+      "name": "AgentExecutionAndStorageZone",
+      "trust_level": "Medium",
+      "contained_nodes": [
+        "C003",
+        "C007",
+        "D003",
+        "D004"
+      ],
+      "description": "Sandboxed agent runners, MCP SafeFS server, and local vector and file stores."
+    }
+  ],
+  "crossingPoints": [
+    {
+      "id": "CP001",
+      "source_zone_id": "TZ004",
+      "destination_zone_id": "TZ002",
+      "connection_ids": [
+        "CN001"
+      ],
+      "authentication_method": "OAuth",
+      "authorization_method": "Role-based",
+      "description": "Agent to Gateway Ingress crossing point."
+    },
+    {
+      "id": "CP002",
+      "source_zone_id": "TZ002",
+      "destination_zone_id": "TZ003",
+      "connection_ids": [
+        "CN003",
+        "CN006",
+        "CN008"
+      ],
+      "authentication_method": "Certificate",
+      "authorization_method": "Policy-based",
+      "description": "Gateway to Control Plane crossing point (ExtAuthz, Guardrail, OTel)."
+    },
+    {
+      "id": "CP003",
+      "source_zone_id": "TZ002",
+      "destination_zone_id": "TZ004",
+      "connection_ids": [
+        "CN004"
+      ],
+      "authentication_method": "Certificate",
+      "authorization_method": "Attribute-based",
+      "description": "Gateway to SafeFS Tool crossing point."
+    },
+    {
+      "id": "CP004",
+      "source_zone_id": "TZ003",
+      "destination_zone_id": "TZ001",
+      "connection_ids": [
+        "CN007"
+      ],
+      "authentication_method": "API Key",
+      "authorization_method": "None",
+      "description": "Guardrail to External LLM Provider crossing point."
+    }
+  ],
+  "trustBoundaries": [
+    {
+      "id": "TB001",
+      "name": "PerimeterIngressBoundary",
+      "type": "Network",
+      "crossing_points": [
+        "CP001"
+      ],
+      "controls": [
+        "OIDC JWT Validation",
+        "Rate Limiting",
+        "Dollar Budgets",
+        "CEL Rules"
+      ],
+      "description": "Perimeter boundary between agent clients and the API gateway."
+    },
+    {
+      "id": "TB002",
+      "name": "ControlPlaneZeroTrustBoundary",
+      "type": "Network",
+      "crossing_points": [
+        "CP002"
+      ],
+      "controls": [
+        "SPIFFE/SPIRE mTLS",
+        "ExtAuthz Inspection",
+        "Presidio DLP"
+      ],
+      "description": "Internal zero-trust boundary isolating the control plane microservices."
+    },
+    {
+      "id": "TB003",
+      "name": "ToolExecutionSandboxBoundary",
+      "type": "Container",
+      "crossing_points": [
+        "CP003"
+      ],
+      "controls": [
+        "SafeFS openat sandboxing",
+        "Ed25519 contract verification",
+        "gVisor runsc"
+      ],
+      "description": "Sandbox isolation boundary protecting host filesystem and tool execution."
+    },
+    {
+      "id": "TB004",
+      "name": "ExternalProviderEgressBoundary",
+      "type": "Network",
+      "crossing_points": [
+        "CP004"
+      ],
+      "controls": [
+        "Presidio Egress Redaction",
+        "API Key Protection",
+        "Circuit Breakers"
+      ],
+      "description": "Egress boundary between Loom internal network and external cloud model providers."
+    }
+  ],
+  "assets": [
+    {
+      "id": "A001",
+      "name": "UserPromptAndCompletion",
+      "type": "Data",
+      "classification": "Confidential",
+      "lifecycle_state": null,
+      "data_states": [
+        "In transit",
+        "In use"
+      ],
+      "description": "User input prompts and model completion payloads containing corporate text, code, or PII.",
+      "owner": null,
+      "criticality": 4,
+      "metadata": {}
+    },
+    {
+      "id": "A002",
+      "name": "MCPToolContract",
+      "type": "Cryptographic Key",
+      "classification": "Restricted",
+      "lifecycle_state": null,
+      "data_states": [
+        "At rest",
+        "In use"
+      ],
+      "description": "Signed tool_contract.json and Ed25519 publisher public/private keys.",
+      "owner": null,
+      "criticality": 5,
+      "metadata": {}
+    },
+    {
+      "id": "A003",
+      "name": "AuditFindingsAndTraces",
+      "type": "Data",
+      "classification": "Internal",
+      "lifecycle_state": null,
+      "data_states": [
+        "At rest",
+        "In transit"
+      ],
+      "description": "OTel trace spans and hash-chained UnifiedFinding audit compliance records.",
+      "owner": null,
+      "criticality": 3,
+      "metadata": {}
+    },
+    {
+      "id": "A004",
+      "name": "FinOpsBudgetState",
+      "type": "Configuration",
+      "classification": "Internal",
+      "lifecycle_state": null,
+      "data_states": [
+        "At rest",
+        "In use"
+      ],
+      "description": "Tenant dollar budgets and token quota ledger balances.",
+      "owner": null,
+      "criticality": 3,
+      "metadata": {}
+    },
+    {
+      "id": "A005",
+      "name": "VectorEmbeddings",
+      "type": "Data",
+      "classification": "Confidential",
+      "lifecycle_state": null,
+      "data_states": [
+        "At rest",
+        "In use"
+      ],
+      "description": "Vector embeddings and Document-Level Security (DLS) chunk metadata.",
+      "owner": null,
+      "criticality": 4,
+      "metadata": {}
+    }
+  ],
+  "flows": [
+    {
+      "id": "F001",
+      "asset_id": "A001",
+      "source_id": "C001",
+      "destination_id": "C004",
+      "transformation_type": "Redaction",
+      "controls": [
+        "Encryption",
+        "Authentication",
+        "Authorization",
+        "Input Validation"
+      ],
+      "description": "Prompt payload inspected for PII and secrets prior to model dispatch.",
+      "protocol": "HTTPS",
+      "encryption": true,
+      "authenticated": true,
+      "authorized": true,
+      "validated": true,
+      "risk_level": 3
+    },
+    {
+      "id": "F002",
+      "asset_id": "A002",
+      "source_id": "C001",
+      "destination_id": "C002",
+      "transformation_type": "Verification",
+      "controls": [
+        "Encryption",
+        "Authentication",
+        "Authorization",
+        "Integrity Check"
+      ],
+      "description": "Tool contract verified cryptographically via Ed25519 signature before tool execution.",
+      "protocol": "gRPC",
+      "encryption": true,
+      "authenticated": true,
+      "authorized": true,
+      "validated": true,
+      "risk_level": 4
+    },
+    {
+      "id": "F003",
+      "asset_id": "A003",
+      "source_id": "C006",
+      "destination_id": "D002",
+      "transformation_type": "Hashing",
+      "controls": [
+        "Encryption",
+        "Access Control",
+        "Audit Logging"
+      ],
+      "description": "Normalized telemetry findings hash-chained and persisted into SQLite ledger.",
+      "protocol": "TCP",
+      "encryption": true,
+      "authenticated": true,
+      "authorized": true,
+      "validated": true,
+      "risk_level": 2
+    },
+    {
+      "id": "F004",
+      "asset_id": "A004",
+      "source_id": "C001",
+      "destination_id": "D001",
+      "transformation_type": "Processing",
+      "controls": [
+        "Encryption",
+        "Access Control",
+        "Rate Limiting"
+      ],
+      "description": "Tenant token and dollar balances queried and updated in persistent store.",
+      "protocol": "TCP",
+      "encryption": true,
+      "authenticated": true,
+      "authorized": true,
+      "validated": true,
+      "risk_level": 2
+    },
+    {
+      "id": "F005",
+      "asset_id": "A005",
+      "source_id": "C007",
+      "destination_id": "D004",
+      "transformation_type": "Tokenization",
+      "controls": [
+        "Encryption",
+        "Authentication",
+        "Authorization",
+        "Input Validation"
+      ],
+      "description": "Agent executes vector similarity queries with mandatory tenant pre-filtering.",
+      "protocol": "HTTPS",
+      "encryption": true,
+      "authenticated": true,
+      "authorized": true,
+      "validated": true,
+      "risk_level": 3
+    }
+  ],
+  "residualRiskAssessments": [
+    {
+      "threat_id": "T001",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by ExtAuthz delimiter stripping, injection marker scanning, and structural prompt isolation.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T002",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by offline Ed25519 publisher signature verification at boot with fail-closed termination.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T003",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by kernel-enforced descriptor-relative openat resolution with O_NOFOLLOW in SafeFS.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T004",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by bidirectional Presidio NLP analysis and deterministic regex secret masking.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T005",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by AgentGateway daily dollar budget hard block ($50/day) and upstream provider circuit breakers.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T006",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by mandatory Document-Level Security (DLS) pre-filtering enforced before vector traversal.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T007",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by cryptographic SHA-256 hash chaining of UnifiedFinding records in the SQLite queue.",
+      "is_current": true
+    },
+    {
+      "threat_id": "T008",
+      "decision": "Mitigated",
+      "residual_severity": "Low",
+      "residual_likelihood": "Unlikely",
+      "rationale": "Mitigated by mandatory TLS 1.3 mTLS with SPIFFE/SPIRE SVIDs limited to <= 10m TTL and peer ACL validation.",
+      "is_current": true
+    }
+  ],
+  "softwareProfile": {
+    "software_type": "AI / ML System",
+    "deployment_model": "Hybrid cloud",
+    "architecture_style": "Microservices",
+    "platform_runtime": "Container",
+    "user_domain": "Security",
+    "licensing_ownership": "Internal custom-built",
+    "modern_paradigms": [
+      "Cloud-native",
+      "Containerized",
+      "Zero Trust architecture",
+      "Agentic AI",
+      "AI/ML"
+    ],
+    "description": "Enterprise AI security gateway, Model Context Protocol (MCP) tool sandbox, and OpenTelemetry compliance pipeline."
+  },
+  "dataAssetProfiles": [
+    {
+      "id": "DP001",
+      "name": "Prompts & Model Completions",
+      "asset_id": "data-prompts",
+      "structural_category": "Unstructured Data",
+      "content_types": [
+        "PII",
+        "Intellectual property / trade secrets",
+        "Operational / telemetry data"
+      ],
+      "sensitivity_tier": "Confidential",
+      "compliance_regimes": [
+        "GDPR",
+        "CCPA / CPRA"
+      ],
+      "data_states": [
+        "In transit",
+        "In use"
+      ],
+      "volume_tier": "Big data",
+      "lifecycle_state": "Active",
+      "business_domain": "Engineering",
+      "description": "User input prompts and upstream model completion payloads containing potential PII, intellectual property, or code."
+    },
+    {
+      "id": "DP002",
+      "name": "MCP Contracts & Signing Keys",
+      "asset_id": "data-mcp-keys",
+      "structural_category": "Secrets and Credentials",
+      "content_types": [
+        "Authentication credentials",
+        "Intellectual property / trade secrets"
+      ],
+      "sensitivity_tier": "Restricted",
+      "compliance_regimes": [
+        "SOX"
+      ],
+      "data_states": [
+        "At rest",
+        "In use"
+      ],
+      "volume_tier": "Small",
+      "lifecycle_state": "Active",
+      "business_domain": "Operations",
+      "description": "Ed25519 signing private/public keys and signed tool_contract.json defining allowed MCP tools and capabilities."
+    },
+    {
+      "id": "DP003",
+      "name": "Audit Telemetry & Finding Ledger",
+      "asset_id": "data-telemetry",
+      "structural_category": "Structured Data",
+      "content_types": [
+        "System metadata",
+        "Operational / telemetry data"
+      ],
+      "sensitivity_tier": "Internal",
+      "compliance_regimes": [
+        "GDPR",
+        "SOX"
+      ],
+      "data_states": [
+        "At rest",
+        "In transit"
+      ],
+      "volume_tier": "Medium",
+      "lifecycle_state": "Active",
+      "business_domain": "Legal",
+      "description": "Normalized OpenTelemetry spans and UnifiedFinding governance audit logs stored in hash-chained SQLite/Postgres."
+    },
+    {
+      "id": "DP004",
+      "name": "RAG Vector Embeddings & ACLs",
+      "asset_id": "data-vector-embeddings",
+      "structural_category": "Semi-Structured Data",
+      "content_types": [
+        "Intellectual property / trade secrets",
+        "Operational / telemetry data"
+      ],
+      "sensitivity_tier": "Confidential",
+      "compliance_regimes": [
+        "GDPR",
+        "CCPA / CPRA"
+      ],
+      "data_states": [
+        "At rest",
+        "In use"
+      ],
+      "volume_tier": "Medium",
+      "lifecycle_state": "Active",
+      "business_domain": "Engineering",
+      "description": "Vector chunk embeddings and document-level security ACL metadata for enterprise RAG retrieval."
+    },
+    {
+      "id": "DP005",
+      "name": "Tenant Quotas & FinOps Budgets",
+      "asset_id": "data-budgets",
+      "structural_category": "Structured Data",
+      "content_types": [
+        "Operational / telemetry data",
+        "PCI / financial data"
+      ],
+      "sensitivity_tier": "Internal",
+      "compliance_regimes": [
+        "None"
+      ],
+      "data_states": [
+        "At rest",
+        "In use"
+      ],
+      "volume_tier": "Small",
+      "lifecycle_state": "Active",
+      "business_domain": "Finance",
+      "description": "Tenant and workload token and dollar budget counters stored in persistent database."
+    }
+  ],
+  "userPersonas": [
+    {
+      "id": "UP001",
+      "persona_type": "Authenticated Standard User",
+      "name": "Enterprise Business User",
+      "privilege_level": "Medium",
+      "organizational_affiliation": "Employee",
+      "functional_roles": [
+        "End User"
+      ],
+      "intent_behavior": "Legitimate",
+      "entity_type": "Human",
+      "authentication_method": "OAuth",
+      "threat_actor_overlay": [],
+      "description": "Enterprise employee or developer accessing AI models and agent workflows via corporate IdP.",
+      "is_relevant": true
+    },
+    {
+      "id": "UP002",
+      "persona_type": "Non-Human Identity / Service Account",
+      "name": "Strands Agent Swarm Worker",
+      "privilege_level": "Low",
+      "organizational_affiliation": "Employee",
+      "functional_roles": [
+        "Service Account"
+      ],
+      "intent_behavior": "Legitimate",
+      "entity_type": "Non-Human",
+      "authentication_method": "Certificate",
+      "threat_actor_overlay": [],
+      "description": "Autonomous agent instances executing multi-step tasks, tool calls, and inter-agent delegations with ephemeral credentials.",
+      "is_relevant": true
+    },
+    {
+      "id": "UP003",
+      "persona_type": "Auditor / Compliance User",
+      "name": "Security & Compliance Auditor",
+      "privilege_level": "Elevated",
+      "organizational_affiliation": "Employee",
+      "functional_roles": [
+        "Auditor"
+      ],
+      "intent_behavior": "Legitimate",
+      "entity_type": "Human",
+      "authentication_method": "Token",
+      "threat_actor_overlay": [],
+      "description": "Corporate security engineer or compliance officer inspecting audit trails and finding queues.",
+      "is_relevant": true
+    },
+    {
+      "id": "UP004",
+      "persona_type": "Anonymous / Unauthenticated User",
+      "name": "Adversarial Prompt Injector",
+      "privilege_level": "None",
+      "organizational_affiliation": "Public / Unknown",
+      "functional_roles": [
+        "End User"
+      ],
+      "intent_behavior": "Malicious",
+      "entity_type": "Human",
+      "authentication_method": "None",
+      "threat_actor_overlay": [],
+      "description": "External adversary attempting direct/indirect prompt injection, jailbreaks, parameter tampering, or budget exhaustion.",
+      "is_relevant": true
+    }
+  ],
+  "nonFunctionalRequirements": [
+    {
+      "quality_class": "Time Behaviour",
+      "level": "Responsive",
+      "rationale": "Edge gateway must inspect tokens and enforce ExtAuthz checks within millisecond latency budgets."
+    },
+    {
+      "quality_class": "Availability",
+      "level": "99.99%",
+      "rationale": "Perimeter security gateway must be highly available for upstream inference traffic."
+    },
+    {
+      "quality_class": "Fail-Safe Behaviour",
+      "level": "Revert to safe state",
+      "rationale": "Security boundary must fail closed on missing credentials, tripped circuits, or unverified contracts."
+    },
+    {
+      "quality_class": "Safety Criticality",
+      "level": "Safety-related",
+      "rationale": "Protects against prompt injection, model jailbreaks, and unauthorized code execution."
+    },
+    {
+      "quality_class": "Interoperability",
+      "level": "Standards-based",
+      "rationale": "Integrates with OpenID Connect, SPIFFE/SPIRE, Envoy ExtAuthz, and OpenTelemetry."
+    },
+    {
+      "quality_class": "Modularity",
+      "level": "High",
+      "rationale": "Decoupled edge gateway, ExtAuthz server, SafeFS sandbox, and telemetry normalizer."
+    },
+    {
+      "quality_class": "User Error Protection",
+      "level": "Strong",
+      "rationale": "Rejects malformed tool calls, invalid schemas, and path traversal attempts."
+    }
+  ],
+  "phaseProgress": {
+    "current_phase": 9,
+    "current_phase_name": "Output Generation and Documentation",
+    "phase_completion": {
+      "1": 1.0,
+      "2": 1.0,
+      "3": 1.0,
+      "4": 1.0,
+      "5": 1.0,
+      "6": 1.0,
+      "7": 1.0,
+      "7.5": 1.0,
+      "8": 1.0,
+      "9": 1.0
+    },
+    "phases": {
+      "1": "Business Context Analysis",
+      "2": "Architecture Analysis",
+      "3": "Threat Actor Analysis",
+      "4": "Trust Boundary Analysis",
+      "5": "Asset Flow Analysis",
+      "6": "Threat Identification",
+      "7": "Mitigation Planning",
+      "7.5": "Code Validation Analysis",
+      "8": "Residual Risk Analysis",
+      "9": "Output Generation and Documentation"
+    },
+    "overall_completion": 1.0
+  },
+  "referenceCatalogue": {
+    "description": "Threat actors the server pre-loaded but that were never assessed for this system. These are NOT part of the threat model.",
+    "threatActors": [
+      {
+        "id": "TA001",
+        "type": "Insider Threat",
+        "name": "Insider",
+        "sophistication_tier": "Tier 2 - Hacktivist / campaign-driven",
+        "motivations": [
+          "Financial gain",
+          "Revenge / grievance"
+        ],
+        "resources": "Individual",
+        "description": "An employee or contractor with legitimate access to the system",
+        "priority": 5,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "Internal",
+        "state_nexus": "None",
+        "targeting_specificity": "Targeted"
+      },
+      {
+        "id": "TA002",
+        "type": "External Attacker",
+        "name": "External Attacker",
+        "sophistication_tier": "Tier 1 - Opportunistic / script kiddie",
+        "motivations": [
+          "Financial gain"
+        ],
+        "resources": "Club / small group",
+        "description": "An external individual or group attempting to gain unauthorized access",
+        "priority": 3,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "None",
+        "targeting_specificity": "Opportunistic"
+      },
+      {
+        "id": "TA003",
+        "type": "Nation-State / APT",
+        "name": "Nation-state Actor",
+        "sophistication_tier": "Tier 5 - Nation-state APT / elite",
+        "motivations": [
+          "Espionage / intelligence collection"
+        ],
+        "resources": "Government",
+        "description": "A state intelligence or military group operating with advanced capabilities",
+        "priority": 1,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "State-executed",
+        "targeting_specificity": "Targeted"
+      },
+      {
+        "id": "TA004",
+        "type": "Hacktivist",
+        "name": "Hacktivist",
+        "sophistication_tier": "Tier 2 - Hacktivist / campaign-driven",
+        "motivations": [
+          "Ideological / hacktivism"
+        ],
+        "resources": "Contest / crowd",
+        "description": "An individual or group motivated by ideological or political beliefs",
+        "priority": 6,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "None",
+        "targeting_specificity": "Sector-focused"
+      },
+      {
+        "id": "TA005",
+        "type": "Financially Motivated Cybercriminal / Organized Crime",
+        "name": "Organized Crime",
+        "sophistication_tier": "Tier 3 - Organized cybercrime",
+        "motivations": [
+          "Financial gain"
+        ],
+        "resources": "Organization",
+        "description": "A criminal organization with significant resources",
+        "priority": 2,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "None",
+        "targeting_specificity": "Opportunistic"
+      },
+      {
+        "id": "TA006",
+        "type": "Competitor / Corporate Espionage",
+        "name": "Competitor",
+        "sophistication_tier": "Tier 3 - Organized cybercrime",
+        "motivations": [
+          "Competitive advantage",
+          "Espionage / intelligence collection"
+        ],
+        "resources": "Organization",
+        "description": "A business competitor seeking competitive advantage",
+        "priority": 7,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "None",
+        "targeting_specificity": "Targeted"
+      },
+      {
+        "id": "TA007",
+        "type": "Script Kiddie / Novice",
+        "name": "Script Kiddie",
+        "sophistication_tier": "Tier 1 - Opportunistic / script kiddie",
+        "motivations": [
+          "Thrill-seeking / notoriety"
+        ],
+        "resources": "Individual",
+        "description": "An inexperienced attacker using pre-made tools",
+        "priority": 9,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "None",
+        "targeting_specificity": "Opportunistic"
+      },
+      {
+        "id": "TA008",
+        "type": "Disgruntled Employee",
+        "name": "Disgruntled Employee",
+        "sophistication_tier": "Tier 1 - Opportunistic / script kiddie",
+        "motivations": [
+          "Revenge / grievance"
+        ],
+        "resources": "Individual",
+        "description": "A current or former employee with a grievance",
+        "priority": 4,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "Internal",
+        "state_nexus": "None",
+        "targeting_specificity": "Targeted"
+      },
+      {
+        "id": "TA009",
+        "type": "Privileged User",
+        "name": "Privileged User",
+        "sophistication_tier": "Tier 2 - Hacktivist / campaign-driven",
+        "motivations": [
+          "Financial gain"
+        ],
+        "resources": "Individual",
+        "description": "A user with elevated privileges who may abuse them or make mistakes",
+        "priority": 8,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "Internal",
+        "state_nexus": "None",
+        "targeting_specificity": "Targeted"
+      },
+      {
+        "id": "TA010",
+        "type": "Third Party",
+        "name": "Third Party",
+        "sophistication_tier": "Tier 2 - Hacktivist / campaign-driven",
+        "motivations": [
+          "Financial gain"
+        ],
+        "resources": "Organization",
+        "description": "A vendor, partner, or service provider with access to the system",
+        "priority": 10,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "Partner / third-party",
+        "state_nexus": "None",
+        "targeting_specificity": "Opportunistic"
+      },
+      {
+        "id": "TA011",
+        "type": "Terrorist Organization",
+        "name": "Terrorist Organization",
+        "sophistication_tier": "Tier 2 - Hacktivist / campaign-driven",
+        "motivations": [
+          "Ideological / hacktivism",
+          "Disruption / destruction"
+        ],
+        "resources": "Club / small group",
+        "description": "A group with limited offensive cyber capability, primarily using the internet for propaganda and recruitment",
+        "priority": 0,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "None",
+        "targeting_specificity": "Sector-focused"
+      },
+      {
+        "id": "TA012",
+        "type": "Private Sector Offensive Actor / Cyber Mercenary",
+        "name": "Private Sector Offensive Actor",
+        "sophistication_tier": "Tier 4 - State-nexus / advanced",
+        "motivations": [
+          "Financial gain"
+        ],
+        "resources": "Organization",
+        "description": "A commercial vendor developing zero-day exploits and spyware for client-selected targets",
+        "priority": 0,
+        "is_relevant": true,
+        "reviewed": false,
+        "relationship_to_target": "External",
+        "state_nexus": "State-aligned",
+        "targeting_specificity": "Targeted"
+      }
+    ]
+  }
+}

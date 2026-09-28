@@ -3,6 +3,63 @@
   "version": "2026-09-24.2",
   "emergency_deny": false,
   "disabled": [],
+  "budgets": {
+    "daily_dollar_budget": {
+      "limit": 50.0,
+      "currency": "USD",
+      "window": "24h",
+      "action": "Block"
+    },
+    "hourly_token_budget": {
+      "limit": 100000,
+      "window": "1h",
+      "action": "Block"
+    },
+    "rate_limit_rpm": 60,
+    "max_concurrent": 4
+  },
+  "dex_jwt": {
+    "issuer": "http://dex:5556/dex",
+    "audiences": [
+      "https://loom.local/api",
+      "loom-local",
+      "loom"
+    ],
+    "required_claims": [
+      "exp",
+      "sub",
+      "iss",
+      "aud"
+    ]
+  },
+  "cel_policies": {
+    "jwt_validation": [
+      "jwt.claims[\"iss\"] == \"http://dex:5556/dex\"",
+      "jwt.sub != \"\"",
+      "jwt.claims[\"aud\"].contains(\"https://loom.local/api\") || jwt.claims[\"aud\"].contains(\"loom-local\") || jwt.claims[\"aud\"].contains(\"loom\")"
+    ],
+    "tool_authorization": [
+      "mcp.tool.name == \"read_text_file\" || mcp.tool.name == \"list_directory\""
+    ],
+    "budget_limits": [
+      "request.tokens <= 4096",
+      "budget.remaining_usd > 0.0"
+    ]
+  },
+  "model_catalog": {
+    "providers": {
+      "openrouter": {
+        "models": {
+          "openai/gpt-4o-mini": {
+            "rates": {
+              "input": "0.15",
+              "output": "0.60"
+            }
+          }
+        }
+      }
+    }
+  },
   "rules": [
     {
       "id": "protocol-initialize", "principal": "local-developer", "workload": "local-agent", "tenant": "local",

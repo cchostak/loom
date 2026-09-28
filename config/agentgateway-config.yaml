@@ -1,5 +1,20 @@
 # yaml-language-server: $schema=https://agentgateway.dev/schema/config
-# Agentgateway v1.5 standalone configuration.
+# Agentgateway v1.5 standalone configuration with native edge security,
+# Common Expression Language (CEL) policies, Dex IdP JWT validation,
+# model catalog pricing, and ExtAuthz delegation.
+
+config:
+  database:
+    url: "sqlite:///data/agentgateway.db"
+  modelCatalog:
+    - inline:
+        providers:
+          openrouter:
+            models:
+              openai/gpt-4o-mini:
+                rates:
+                  input: "0.15"
+                  output: "0.60"
 
 # Telemetry & Observability
 frontendPolicies:
@@ -28,6 +43,59 @@ llm:
                 host: guardrail-proxy:9090
               headers:
                 ":path": '"/response"'
+  policies:
+    # Dex IdP JWT authentication at the edge
+    jwtAuth:
+      issuer: "http://dex:5556/dex"
+      audiences:
+        - "https://loom.local/api"
+        - "loom-local"
+        - "loom"
+      jwks: '{"keys":[{"kty":"RSA","kid":"loom-dex-key","use":"sig","alg":"RS256","n":"x14lYqBc2W_vcuXwUVr2AAYIH3mbeuu1k37Pb9DV23L3MIiOFoSVBBT2JeeqHdfELISBtOkQsqeq8CzYBmfnnvYK4UiXxh5TJSgP3Bf3SSElhAYdYf8-FmWaB8jRamigSJtciSs7iVDSPEuWD9D-0pU1DnuHDkUpHcooYs4X7iXV7R3k6HP2xQON48kw0Mp-E3rHMt7XF5WJNYUNELGdMPnlnweNckpQd5_tLWYFAlx-7lvh-EcZbuJbPAX7gBQFLM1zYqYx0oUA0dlrgkSpY7wdA3QXTDqhukajVr2RWBDp_Uat_V1xojicLRGsBoc4X0bgThXUMiWs8ZGIXg9H1w","e":"AQAB"}]}'
+      jwtValidationOptions:
+        requiredClaims:
+          - "exp"
+          - "sub"
+          - "iss"
+          - "aud"
+    # CEL authorization for Dex IdP claim validation
+    authorization:
+      rules:
+        - 'jwt.claims["iss"] == "http://dex:5556/dex"'
+        - 'jwt.sub != ""'
+        - 'jwt.claims["aud"].contains("https://loom.local/api") || jwt.claims["aud"].contains("loom-local") || jwt.claims["aud"].contains("loom")'
+    # Native token and request rate limits
+    localRateLimit:
+      - type: requests
+        maxTokens: 60
+        tokensPerFill: 60
+        fillInterval: "1m"
+      - type: tokens
+        maxTokens: 100000
+        tokensPerFill: 100000
+        fillInterval: "1h"
+    # Native API key spend controls and dollar budgets
+    apiKey:
+      mode: optional
+      keys:
+        - key: "loom-default-key"
+          metadata:
+            name: "loom-default-key"
+          budgets:
+            - name: "daily-dollar-budget"
+              limit:
+                unit: USD
+                amount: 50.0
+              window:
+                rolling: "24h"
+              onBudgetExceeded: Block
+            - name: "hourly-token-budget"
+              limit:
+                unit: Tokens
+                amount: 100000.0
+              window:
+                rolling: "1h"
+              onBudgetExceeded: Block
 
 # Model Context Protocol (MCP) Server Registry & Policy
 mcp:
@@ -39,8 +107,29 @@ mcp:
         args: ["--isolated"]
 
   policies:
+    # CEL tool authorization: allow-list based
     mcpAuthorization:
       rules:
-        # CEL authorization is allow-list based; unmatched tools are denied and
-        # filtered from discovery responses.
         - 'mcp.tool.name == "read_text_file" || mcp.tool.name == "list_directory"'
+    # Dex IdP JWT authentication at the edge for MCP
+    jwtAuth:
+      issuer: "http://dex:5556/dex"
+      audiences:
+        - "https://loom.local/api"
+        - "loom-local"
+        - "loom"
+      jwks: '{"keys":[{"kty":"RSA","kid":"loom-dex-key","use":"sig","alg":"RS256","n":"x14lYqBc2W_vcuXwUVr2AAYIH3mbeuu1k37Pb9DV23L3MIiOFoSVBBT2JeeqHdfELISBtOkQsqeq8CzYBmfnnvYK4UiXxh5TJSgP3Bf3SSElhAYdYf8-FmWaB8jRamigSJtciSs7iVDSPEuWD9D-0pU1DnuHDkUpHcooYs4X7iXV7R3k6HP2xQON48kw0Mp-E3rHMt7XF5WJNYUNELGdMPnlnweNckpQd5_tLWYFAlx-7lvh-EcZbuJbPAX7gBQFLM1zYqYx0oUA0dlrgkSpY7wdA3QXTDqhukajVr2RWBDp_Uat_V1xojicLRGsBoc4X0bgThXUMiWs8ZGIXg9H1w","e":"AQAB"}]}'
+    # CEL authorization rules for MCP requests
+    authorization:
+      rules:
+        - 'jwt.claims["iss"] == "http://dex:5556/dex"'
+        - 'jwt.sub != ""'
+    # ExtAuthz delegation for deep tool contract and cryptographic validation
+    extAuthz:
+      host: "control-plane:9001"
+      protocol:
+        grpc: {}
+      failureMode: deny
+      includeRequestBody:
+        maxRequestBytes: 65536
+        packAsBytes: true

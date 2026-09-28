@@ -222,7 +222,7 @@ mcp-init: ## Bootstrap MCP tool contract schemas and Ed25519 signing keys
 mcp-test: ## Run strict MCP schema validation and tool poisoning test suite
 	$(UV) run --locked --project integrations/strands pytest -q integrations/strands/tests/test_mcp*.py
 
-test-telemetry: ## Verify guardrail event normalization to BlackShield finding schema
+test-telemetry: ## Verify guardrail event normalization to unified finding schema
 	@cd docker && go test -v -race -run 'Telemetry' ./enterprise
 
 test-all: test strands-test mcp-test test-telemetry ## Run complete test suite across Go and Python
